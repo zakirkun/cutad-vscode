@@ -68,6 +68,10 @@
         "title": "Cutad.AI: Test Connection"
       },
       {
+        "command": "cutad.selectModel",
+        "title": "Cutad.AI: Select Model"
+      },
+      {
         "command": "cutad.showDiagnostics",
         "title": "Cutad.AI: Show Diagnostics"
       },

@@ -7,5 +7,6 @@ export default defineConfig({
     setupFiles: ["test/setup.ts"],
     testTimeout: 120_000,
     hookTimeout: 120_000,
+    fileParallelism: false,
   },
 });

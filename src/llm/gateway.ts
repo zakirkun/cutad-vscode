@@ -1,5 +1,9 @@
 import { createOpenAICompatible } from "@ai-sdk/openai-compatible";
+import { setDefaultResultOrder } from "node:dns";
 import type { CutadConfig } from "../config/homeConfig";
+
+// IPv6-first resolution can hang on some networks (observed: ai.cutad.web.id).
+setDefaultResultOrder("ipv4first");
 
 export interface GatewayModelInfo {
   id: string;

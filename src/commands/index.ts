@@ -58,6 +58,42 @@ export function registerCommands(context: vscode.ExtensionContext): void {
   );
 
   context.subscriptions.push(
+    vscode.commands.registerCommand("cutad.selectModel", async () => {
+      const config = loadConfig();
+      if (!config.apiKey) {
+        void vscode.window.showWarningMessage(`Cutad.AI: no API key. Edit ${configPath()}.`);
+        return;
+      }
+      try {
+        const models = await vscode.window.withProgress(
+          { location: vscode.ProgressLocation.Notification, title: "Cutad.AI: fetching models…" },
+          () => listModels(config),
+        );
+        if (models.length === 0) {
+          void vscode.window.showWarningMessage("Cutad.AI: no models available for this key.");
+          return;
+        }
+        const picked = await vscode.window.showQuickPick(
+          models.map((m) => ({
+            label: m.id === config.model ? `$(check) ${m.id}` : m.id,
+            description: `${Math.round(m.contextWindow / 1000)}k ctx · ${Math.round(m.maxOutputTokens / 1000)}k out${m.reasoning ? " · reasoning" : ""}`,
+            detail: m.displayName,
+            id: m.id,
+          })),
+          { title: "Cutad.AI — Select Model", placeHolder: `Current: ${config.model}` },
+        );
+        if (!picked) return;
+        saveConfig({ model: picked.id });
+        getLogger().info(`[config] model set to ${picked.id}`);
+        void vscode.window.showInformationMessage(`Cutad.AI: model set to ${picked.id}`);
+      } catch (err) {
+        getLogger().error(`[config] selectModel failed: ${String(err)}`);
+        void vscode.window.showErrorMessage(`Cutad.AI: could not list models — ${String(err)}`);
+      }
+    }),
+  );
+
+  context.subscriptions.push(
     vscode.commands.registerCommand("cutad.openConfig", async () => {
       ensureConfigFile();
       const doc = await vscode.workspace.openTextDocument(configPath());

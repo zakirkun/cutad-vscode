@@ -10,7 +10,8 @@ export const DEFAULT_CONFIG = {
   apiKey: "",
   baseUrl: "https://ai.cutad.web.id/v1",
   model: "workbuddy/deepseek-v4.1-flash",
-  reasoning: { show: true },
+  maxOutputTokens: 8192,
+  reasoning: { show: true, effort: "high" as string },
   agent: { maxIterations: 25, autoApprove: [] as string[] },
   tools: { truncateKB: 64 },
   telemetry: { enabled: false },
@@ -20,7 +21,11 @@ export const ConfigSchema = z.object({
   apiKey: z.string(),
   baseUrl: z.string().min(1),
   model: z.string().min(1),
-  reasoning: z.object({ show: z.boolean() }),
+  maxOutputTokens: z.number().int().positive(),
+  reasoning: z.object({
+    show: z.boolean(),
+    effort: z.string(),
+  }),
   agent: z.object({
     maxIterations: z.number().int().positive(),
     autoApprove: z.array(z.string()),

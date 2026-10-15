@@ -1,24 +1,32 @@
 import * as vscode from "vscode";
 import { loadConfig, configPath } from "../config/homeConfig";
-import { createProvider } from "../llm/gateway";
+import { runAsk, type AgentEvent } from "../llm/runtime";
+import { assembleContext } from "../context/assembler";
+import { newRenderState, renderEvent, errorAction } from "./render";
 import { getLogger } from "../util/logger";
-import { streamText } from "ai";
 
 export const PARTICIPANT_ID = "cutad.chat";
 
-/**
- * Phase 0 participant — now wired to the real CutadAI gateway via the Vercel AI SDK.
- * Full mode routing (`/ask`, `/agent`, `/plan`, `/debug`) arrives in Phases 1–4.
- */
-export function registerPlaceholderParticipant(context: vscode.ExtensionContext): void {
+export function registerParticipant(context: vscode.ExtensionContext): void {
   const participant = vscode.chat.createChatParticipant(PARTICIPANT_ID, handler);
+  participant.followupProvider = {
+    provideFollowups(result) {
+      const mode = (result.metadata as { mode?: string } | undefined)?.mode;
+      if (mode === "help") return [];
+      return [
+        { prompt: "Explain that in more detail", label: "Explain further" },
+        { prompt: "Show a code example", label: "Show code example" },
+        { prompt: "What should I do next?", label: "Next steps" },
+      ];
+    },
+  };
   context.subscriptions.push(participant);
   getLogger().info(`[chat] participant registered: @${PARTICIPANT_ID}`);
 }
 
 const handler: vscode.ChatRequestHandler = async (
   request,
-  _context,
+  context,
   stream,
   token,
 ): Promise<vscode.ChatResult> => {
@@ -28,54 +36,102 @@ const handler: vscode.ChatRequestHandler = async (
 
   if (!config.apiKey) {
     stream.markdown(
-      `No API key configured.\n\nEdit \`${configPath()}\` or run **Cutad.AI: Set API Key**.`,
+      `**No API key configured.**\n\nAdd your key to \`${configPath()}\` or run **Cutad.AI: Set API Key**.`,
     );
-    return {};
+    return { metadata: { mode: "help" } };
   }
 
   if (request.command === "help") {
     stream.markdown(helpMarkdown(config.model));
-    return {};
+    return { metadata: { mode: "help" } };
   }
 
-  stream.progress(`Thinking with ${config.model}…`);
+  const notice = modeNotice(request.command);
+  if (notice) {
+    stream.markdown(notice);
+    return { metadata: { mode: "help" } };
+  }
 
-  const provider = createProvider(config);
-  const result = streamText({
-    model: provider.chatModel(config.model),
-    prompt: request.prompt,
-    maxOutputTokens: 4096,
-    abortSignal: abortFromToken(token),
+  const activeEditor = vscode.window.activeTextEditor;
+  const assembled = await assembleContext({
+    references: request.references,
+    activeEditor,
+    contextWindow: 200_000,
+    truncateKB: config.tools.truncateKB,
   });
 
-  try {
-    for await (const part of result.stream) {
-      if (token.isCancellationRequested) break;
-      if (part.type === "text-delta") {
-        stream.markdown(part.text);
-      } else if (part.type === "reasoning-delta") {
-        if (config.reasoning.show) stream.markdown(`> _${part.text}_\n\n`);
-      } else if (part.type === "error") {
-        throw part.error;
-      }
-    }
-  } catch (err) {
-    log.error(`[chat] stream failed: ${String(err)}`);
-    stream.markdown(`\n\n**Gateway error:** ${formatError(err)}`);
+  if (assembled.includedLabels.length > 0) {
+    stream.progress(`Context: ${assembled.includedLabels.join(", ")}`);
   }
 
-  return {};
-};
+  const history = context.history
+    .slice(-6)
+    .map((turn) => {
+      if (turn instanceof vscode.ChatRequestTurn) return `User: ${turn.prompt}`;
+      if (turn instanceof vscode.ChatResponseTurn) {
+        const text = turn.response
+          .map((part) => (part instanceof vscode.ChatResponseMarkdownPart ? part.value.value : ""))
+          .join("");
+        return `Assistant: ${text.slice(0, 500)}`;
+      }
+      return "";
+    })
+    .filter(Boolean)
+    .join("\n");
 
-function abortFromToken(token: vscode.CancellationToken): AbortSignal {
+  const prompt = buildPrompt(request.prompt, assembled.text, history);
+
   const controller = new AbortController();
   token.onCancellationRequested(() => controller.abort());
-  return controller.signal;
+
+  const renderState = newRenderState();
+  const sink = {
+    markdown: (value: string) => stream.markdown(value),
+    progress: (value: string) => stream.progress(value),
+    button: (command: { command: string; title: string }) => stream.button(command),
+  };
+
+  let lastErrorAction: { command: string; title: string } | undefined;
+
+  const onEvent = (event: AgentEvent) => {
+    if (event.type === "error") lastErrorAction = errorAction(event.error);
+    if (event.type === "rate-limit" && event.remaining !== undefined) {
+      updateRateLimitStatus(event.remaining);
+    }
+    renderEvent(event, sink, renderState, config.reasoning.show);
+  };
+
+  stream.progress(`Thinking with ${config.model}…`);
+  await runAsk({ config, prompt, signal: controller.signal, onEvent });
+
+  if (lastErrorAction) {
+    stream.button(lastErrorAction);
+  }
+
+  return { metadata: { mode: request.command ?? "ask" } };
+};
+
+function buildPrompt(userPrompt: string, contextText: string, history: string): string {
+  const parts = [
+    "You are Cutad.AI, a coding assistant inside VS Code. Answer concisely with markdown. Use code blocks with language tags.",
+  ];
+  if (history) parts.push(`<conversation_history>\n${history}\n</conversation_history>`);
+  if (contextText) parts.push(`<workspace_context>\n${contextText}\n</workspace_context>`);
+  parts.push(`<user_request>\n${userPrompt}\n</user_request>`);
+  return parts.join("\n\n");
 }
 
-function formatError(err: unknown): string {
-  if (err instanceof Error) return err.message;
-  return String(err);
+function modeNotice(command: string | undefined): string | undefined {
+  switch (command) {
+    case "agent":
+      return "**`/agent` arrives in Phase 2** — coding agent with tools and approvals. Use plain messages or `/ask` for now.";
+    case "plan":
+      return "**`/plan` arrives in Phase 3** — durable plan artifacts with step execution. Use plain messages or `/ask` for now.";
+    case "debug":
+      return "**`/debug` arrives in Phase 4** — debugger and test-state investigation. Use plain messages or `/ask` for now.";
+    default:
+      return undefined;
+  }
 }
 
 function helpMarkdown(model: string): string {
@@ -84,12 +140,24 @@ function helpMarkdown(model: string): string {
     "",
     "| Command | Status |",
     "|---|---|",
-    "| `/ask` | Phase 1 |",
+    "| `/ask` | ✅ available (default) |",
     "| `/agent` | Phase 2 |",
     "| `/plan` | Phase 3 |",
     "| `/debug` | Phase 4 |",
+    "| `/help` | ✅ this message |",
     "",
-    `Config: \`${configPath()}\``,
+    `Config: \`${configPath()}\` · Commands: **Cutad.AI: Test Connection**, **Cutad.AI: Select Model**`,
   ].join("\n");
 }
 
+let rateLimitItem: vscode.StatusBarItem | undefined;
+
+function updateRateLimitStatus(remaining: number): void {
+  if (!rateLimitItem) {
+    rateLimitItem = vscode.window.createStatusBarItem(vscode.StatusBarAlignment.Right, 50);
+    rateLimitItem.command = "cutad.showDiagnostics";
+    rateLimitItem.tooltip = "CutadAI remaining requests in current window";
+  }
+  rateLimitItem.text = `$(pulse) CutadAI ${remaining}`;
+  rateLimitItem.show();
+}

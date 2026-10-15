@@ -11,6 +11,7 @@ const options = {
   entryPoints: [
     { in: "src/extension.ts", out: "extension" },
     { in: "src/spikes/hostSmoke.ts", out: "host-smoke" },
+    { in: "src/spikes/reasoningSpike.ts", out: "reasoning-spike" },
   ],
   outdir: "dist",
   bundle: true,

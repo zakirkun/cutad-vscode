@@ -51,6 +51,26 @@ describe("real gateway", () => {
     expect(deltas.join("")).toMatch(/1/);
   });
 
+  it("emits separated reasoning deltas when reasoningEffort is set (S-4)", async () => {
+    const provider = createProvider(config);
+    const result = streamText({
+      model: provider.chatModel(config.model),
+      prompt: "Think step by step: what is 17 * 23?",
+      maxOutputTokens: 4096,
+      providerOptions: { cutad: { reasoningEffort: "high" } },
+    });
+    let reasoning = "";
+    let text = "";
+    for await (const part of result.stream) {
+      if (part.type === "reasoning-delta") reasoning += part.text;
+      if (part.type === "text-delta") text += part.text;
+    }
+    expect(reasoning.length).toBeGreaterThan(0);
+    expect(text.length).toBeGreaterThan(0);
+    const usage = await result.usage;
+    expect(usage.outputTokenDetails?.reasoningTokens ?? 0).toBeGreaterThan(0);
+  });
+
   it("rejects a bad key with a gateway error", async () => {
     const bad = { ...config, apiKey: "cag_invalid_key_for_test" };
     await expect(listModels(bad)).rejects.toMatchObject({ status: 401 });

@@ -46,7 +46,10 @@ Decisions made with the user on 2026-10-15. Changing any of these requires an ex
 | Local toolchain | shell 2026-10-15 | node v22.21.1, npm 10.9.4, git 2.46.0 |
 | Live model (default) | gateway 2026-10-15 | `workbuddy/deepseek-v4.1-flash` — 1M ctx, 20k max out, reasoning:true |
 | Live model count | gateway 2026-10-15 | 25 models visible to this account |
-| Config file | this session | `~/.cutad/config.json` (home-basedir; key + baseUrl + model + settings) |
+| Reasoning wire format | S-4 spike 2026-10-15 | `reasoning-start`/`reasoning-delta`/`reasoning-end` stream parts **when** `providerOptions: { cutad: { reasoningEffort } }` is sent; otherwise reasoning is inline text. Usage: `outputTokenDetails.reasoningTokens` |
+| DNS quirk | live 2026-10-15 | IPv6-first resolution hangs on this network → `setDefaultResultOrder("ipv4first")` required in gateway client |
+| AI SDK retry | source verify 2026-10-15 | Native retry honors `retry-after`/`retry-after-ms` (0–60s window); our layer only maps final errors to UX |
+| Config file | this session | `~/.cutad/config.json` (home-basedir; key + baseUrl + model + maxOutputTokens + reasoning.effort + settings) |
 | VSCode Chat Participant API | code.visualstudio.com (docs dated 10/14/2026) | Current; `vscode.chat.createChatParticipant`. Note: `ChatRequest.references` (not `variables`) |
 | VSCode LM Tools API | code.visualstudio.com | Current; `contributes.languageModelTools` + `vscode.lm.registerTool` |
 | VSCode LM Chat Provider API | code.visualstudio.com | Current; `vscode.lm.registerLanguageModelChatProvider` — can expose CutadAI models to VSCode's model picker |
@@ -130,7 +133,7 @@ Open questions currently tracked in [PRD §12](./PRD.md#12-open-questions-to-res
 |---|---|---|---|---|---|
 | R-1 | ~~**Node version mismatch**: AI SDK 7 needs Node ≥22~~ | — | — | **RESOLVED 2026-10-15**: extension host = Node v24.21.0 (Electron 43.7.7 / VS Code 1.141.1). AI SDK 7 kept | ✅ Closed |
 | R-2 | **Tool-call support varies per model** (gateway docs say model-dependent) | Medium | High | Capability probe at model selection; chat-only fallback with notice; document tested models. Gateway exposes `capabilities` per model — use it | 🟡 Active |
-| R-3 | **Reasoning content format unknown** (`reasoning_content` vs deltas) | Medium | Medium | Phase 1 spike against real models; adapter normalizes to `ReasoningDelta`. `workbuddy/deepseek-v4.1-flash` reports `reasoning: true` | 🟡 Active |
+| R-3 | ~~**Reasoning content format unknown**~~ | — | — | **RESOLVED 2026-10-15 (S-4)**: gateway emits `reasoning-start/delta/end` parts when `providerOptions: { cutad: { reasoningEffort: "high" } }` is set. Without it, reasoning is inline text. Reasoning UI depends on sending the option | ✅ Closed |
 | R-4 | ~~**LangGraph bundling issues**~~ | — | — | **RESOLVED 2026-10-15**: S-3 spike passed — StateGraph + AI SDK run from esbuild CJS bundle (`dist/host-smoke.js`) | ✅ Closed |
 | R-5 | **429/quota during development** (shared account limits) | High | Medium | Throttle manual testing; surface quota errors clearly; backoff in client | 🟡 Active |
 | R-6 | **Chat API changes** (VSCode moves fast) | Low | Medium | Stable APIs only; abstract behind `ChatViewAdapter`; track release notes monthly. Noted: `ChatRequest.variables` → `references` API rename already handled | 🟡 Active |
@@ -139,6 +142,7 @@ Open questions currently tracked in [PRD §12](./PRD.md#12-open-questions-to-res
 | R-9 | **Scope creep across 4 modes** | High | Medium | Phase gates; PRD §3.2 non-goals enforced; "post-V1" parking lot in STATE.md | 🟡 Active |
 | R-10 | **Marketplace review delays / branding** (Q-7) | Low | Low | Prepare listing early in Phase 6; use `vsce package` local installs meanwhile | 🔴 Open |
 | R-11 | **Key in home config file** (D-10 change) | Medium | High | `~/.cutad/config.json` is outside workspace (not committed); document permissions guidance; never log key; consider OS keychain post-V1 | 🟡 Active |
+| R-12 | **IPv6 resolution hangs** to gateway on some networks | Medium | High | `setDefaultResultOrder("ipv4first")` in `src/llm/gateway.ts` — **do not remove**; verified fix 2026-10-15 | ✅ Mitigated |
 
 ---
 

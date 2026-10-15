@@ -8,6 +8,8 @@ export type AgentEvent =
   | { type: "reasoning-delta"; text: string }
   | { type: "reasoning-end" }
   | { type: "progress"; text: string }
+  | { type: "tool-start"; toolCallId: string; toolId: string; input: string }
+  | { type: "tool-end"; toolCallId: string; toolId: string; ok: boolean; preview: string }
   | { type: "usage"; inputTokens: number; outputTokens: number; reasoningTokens: number }
   | { type: "rate-limit"; remaining?: number; resetAtMs?: number }
   | { type: "error"; error: CutadError }

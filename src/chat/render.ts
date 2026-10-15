@@ -61,6 +61,14 @@ export function renderEvent(
       sink.progress(event.text);
       break;
 
+    case "tool-start":
+      sink.progress(`⚙ ${event.toolId}: ${event.input}`);
+      break;
+
+    case "tool-end":
+      sink.progress(`${event.ok ? "✓" : "✗"} ${event.toolId}${event.ok ? "" : ` — ${event.preview.slice(0, 120)}`}`);
+      break;
+
     case "usage":
       break;
 

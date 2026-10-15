@@ -24,6 +24,7 @@
     "lint": "eslint .",
     "format": "prettier --write \"src/**/*.ts\" \"test/**/*.ts\" \"*.mjs\"",
     "spike:host": "node dist/host-smoke.js",
+    "gen:tools": "node scripts/gen-tools-manifest.mjs",
     "vscode:prepublish": "npm run build"
   },
   "contributes": {
@@ -104,7 +105,334 @@
           "description": "Opt-in anonymous telemetry (event names only, never code or prompts)."
         }
       }
-    }
+    },
+    "languageModelTools": [
+      {
+        "name": "cutad_read_file",
+        "tags": [
+          "cutad"
+        ],
+        "toolReferenceName": "read_file",
+        "displayName": "Read File",
+        "modelDescription": "Read a text file from the workspace. Returns numbered lines. Optionally restrict to a line range (1-based). Use before editing a file.",
+        "userDescription": "Read a workspace file",
+        "canBeReferencedInPrompt": true,
+        "icon": "$(sparkle)",
+        "inputSchema": {
+          "type": "object",
+          "properties": {
+            "path": {
+              "type": "string",
+              "description": "Workspace-relative file path"
+            },
+            "startLine": {
+              "description": "First line (1-based)",
+              "type": "integer",
+              "exclusiveMinimum": 0,
+              "maximum": 9007199254740991
+            },
+            "endLine": {
+              "description": "Last line (1-based, inclusive)",
+              "type": "integer",
+              "exclusiveMinimum": 0,
+              "maximum": 9007199254740991
+            }
+          },
+          "required": [
+            "path"
+          ],
+          "additionalProperties": false
+        }
+      },
+      {
+        "name": "cutad_list_dir",
+        "tags": [
+          "cutad"
+        ],
+        "toolReferenceName": "list_dir",
+        "displayName": "List Directory",
+        "modelDescription": "List files and directories at a workspace path (defaults to the workspace root).",
+        "userDescription": "List a directory",
+        "canBeReferencedInPrompt": true,
+        "icon": "$(sparkle)",
+        "inputSchema": {
+          "type": "object",
+          "properties": {
+            "path": {
+              "description": "Workspace-relative directory path (default: root)",
+              "type": "string"
+            }
+          },
+          "additionalProperties": false
+        }
+      },
+      {
+        "name": "cutad_get_workspace_tree",
+        "tags": [
+          "cutad"
+        ],
+        "toolReferenceName": "get_workspace_tree",
+        "displayName": "Workspace Tree",
+        "modelDescription": "Show a bounded tree of the workspace folders (useful for orientation).",
+        "userDescription": "Show workspace structure",
+        "canBeReferencedInPrompt": true,
+        "icon": "$(sparkle)",
+        "inputSchema": {
+          "type": "object",
+          "properties": {
+            "depth": {
+              "description": "Max depth (default 2)",
+              "type": "integer",
+              "minimum": 1,
+              "maximum": 4
+            }
+          },
+          "additionalProperties": false
+        }
+      },
+      {
+        "name": "cutad_search_text",
+        "tags": [
+          "cutad"
+        ],
+        "toolReferenceName": "search_text",
+        "displayName": "Search Text",
+        "modelDescription": "Search file contents in the workspace for a literal string or regular expression. Returns file:line matches.",
+        "userDescription": "Search for text in the workspace",
+        "canBeReferencedInPrompt": true,
+        "icon": "$(sparkle)",
+        "inputSchema": {
+          "type": "object",
+          "properties": {
+            "query": {
+              "type": "string",
+              "description": "Literal text or JavaScript regular expression"
+            },
+            "maxResults": {
+              "description": "Max matches (default 50)",
+              "type": "integer",
+              "minimum": 1,
+              "maximum": 200
+            },
+            "glob": {
+              "description": "Optional file extension filter, e.g. '.ts' or '.ts,.js'",
+              "type": "string"
+            }
+          },
+          "required": [
+            "query"
+          ],
+          "additionalProperties": false
+        }
+      },
+      {
+        "name": "cutad_apply_patch",
+        "tags": [
+          "cutad"
+        ],
+        "toolReferenceName": "apply_patch",
+        "displayName": "Apply Patch",
+        "modelDescription": "Replace an exact text block in a file. oldText must match the file content exactly (including whitespace) and must be unique. Use read_file first to copy the exact text. Prefer small targeted edits over rewriting whole files.",
+        "userDescription": "Edit a file (exact text replacement)",
+        "canBeReferencedInPrompt": true,
+        "icon": "$(sparkle)",
+        "inputSchema": {
+          "type": "object",
+          "properties": {
+            "path": {
+              "type": "string",
+              "description": "Workspace-relative file path"
+            },
+            "oldText": {
+              "type": "string",
+              "description": "Exact existing text to replace"
+            },
+            "newText": {
+              "type": "string",
+              "description": "Replacement text (empty string deletes the block)"
+            }
+          },
+          "required": [
+            "path",
+            "oldText",
+            "newText"
+          ],
+          "additionalProperties": false
+        }
+      },
+      {
+        "name": "cutad_write_file",
+        "tags": [
+          "cutad"
+        ],
+        "toolReferenceName": "write_file",
+        "displayName": "Write File",
+        "modelDescription": "Create or overwrite a file with the given content. For edits to existing files prefer apply_patch.",
+        "userDescription": "Write a file (create or overwrite)",
+        "canBeReferencedInPrompt": true,
+        "icon": "$(sparkle)",
+        "inputSchema": {
+          "type": "object",
+          "properties": {
+            "path": {
+              "type": "string",
+              "description": "Workspace-relative file path"
+            },
+            "content": {
+              "type": "string",
+              "description": "Full file content"
+            }
+          },
+          "required": [
+            "path",
+            "content"
+          ],
+          "additionalProperties": false
+        }
+      },
+      {
+        "name": "cutad_git_status",
+        "tags": [
+          "cutad"
+        ],
+        "toolReferenceName": "git_status",
+        "displayName": "Git Status",
+        "modelDescription": "Show the working tree status (branch and changed files) as porcelain output.",
+        "userDescription": "Show git status",
+        "canBeReferencedInPrompt": true,
+        "icon": "$(sparkle)",
+        "inputSchema": {
+          "type": "object",
+          "properties": {},
+          "additionalProperties": false
+        }
+      },
+      {
+        "name": "cutad_git_diff",
+        "tags": [
+          "cutad"
+        ],
+        "toolReferenceName": "git_diff",
+        "displayName": "Git Diff",
+        "modelDescription": "Show unstaged (or staged) changes as a unified diff.",
+        "userDescription": "Show git diff",
+        "canBeReferencedInPrompt": true,
+        "icon": "$(sparkle)",
+        "inputSchema": {
+          "type": "object",
+          "properties": {
+            "staged": {
+              "description": "Show staged changes (default false)",
+              "type": "boolean"
+            },
+            "path": {
+              "description": "Limit diff to this path",
+              "type": "string"
+            }
+          },
+          "additionalProperties": false
+        }
+      },
+      {
+        "name": "cutad_get_diagnostics",
+        "tags": [
+          "cutad"
+        ],
+        "toolReferenceName": "get_diagnostics",
+        "displayName": "Get Diagnostics",
+        "modelDescription": "Get current errors and warnings from the language servers (Problems panel). Optionally filter by file path.",
+        "userDescription": "Read workspace diagnostics",
+        "canBeReferencedInPrompt": true,
+        "icon": "$(sparkle)",
+        "inputSchema": {
+          "type": "object",
+          "properties": {
+            "path": {
+              "description": "Filter to a workspace-relative file path",
+              "type": "string"
+            },
+            "severity": {
+              "description": "Filter by severity",
+              "type": "string",
+              "enum": [
+                "error",
+                "warning"
+              ]
+            }
+          },
+          "additionalProperties": false
+        }
+      },
+      {
+        "name": "cutad_get_open_editors",
+        "tags": [
+          "cutad"
+        ],
+        "toolReferenceName": "get_open_editors",
+        "displayName": "Get Open Editors",
+        "modelDescription": "List currently open editor tabs with their paths.",
+        "userDescription": "List open editor tabs",
+        "canBeReferencedInPrompt": true,
+        "icon": "$(sparkle)",
+        "inputSchema": {
+          "type": "object",
+          "properties": {},
+          "additionalProperties": false
+        }
+      },
+      {
+        "name": "cutad_get_selection",
+        "tags": [
+          "cutad"
+        ],
+        "toolReferenceName": "get_selection",
+        "displayName": "Get Selection",
+        "modelDescription": "Get the text currently selected in the active editor (or the full file path if no selection).",
+        "userDescription": "Read the active editor selection",
+        "canBeReferencedInPrompt": true,
+        "icon": "$(sparkle)",
+        "inputSchema": {
+          "type": "object",
+          "properties": {},
+          "additionalProperties": false
+        }
+      },
+      {
+        "name": "cutad_run_command",
+        "tags": [
+          "cutad"
+        ],
+        "toolReferenceName": "run_command",
+        "displayName": "Run Command",
+        "modelDescription": "Run a shell command in a terminal and capture its output. Use for builds, tests, and CLI tools. Avoid long-running processes (dev servers).",
+        "userDescription": "Run a terminal command",
+        "canBeReferencedInPrompt": true,
+        "icon": "$(sparkle)",
+        "inputSchema": {
+          "type": "object",
+          "properties": {
+            "command": {
+              "type": "string",
+              "description": "The exact shell command to run"
+            },
+            "cwd": {
+              "description": "Working directory (default: workspace root)",
+              "type": "string"
+            },
+            "timeoutSeconds": {
+              "description": "Timeout (default 120)",
+              "type": "integer",
+              "minimum": 5,
+              "maximum": 300
+            }
+          },
+          "required": [
+            "command"
+          ],
+          "additionalProperties": false
+        }
+      }
+    ]
   },
   "dependencies": {
     "@ai-sdk/openai-compatible": "3.0.69",

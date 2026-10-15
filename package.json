@@ -17,14 +17,16 @@
   "main": "./dist/extension.js",
   "scripts": {
     "build": "node esbuild.mjs",
-    "watch": "node esbuild.mjs --watch",
+    "build:dev": "node esbuild.mjs --dev",
+    "watch": "node esbuild.mjs --dev --watch",
     "check": "tsc --noEmit",
     "test": "vitest run",
     "test:watch": "vitest",
     "lint": "eslint .",
     "format": "prettier --write \"src/**/*.ts\" \"test/**/*.ts\" \"*.mjs\"",
-    "spike:host": "node dist/host-smoke.js",
+    "spike:host": "node esbuild.mjs --dev && node dist/host-smoke.js",
     "gen:tools": "node scripts/gen-tools-manifest.mjs",
+    "package": "node esbuild.mjs && npx @vscode/vsce package --no-dependencies",
     "vscode:prepublish": "npm run build"
   },
   "contributes": {

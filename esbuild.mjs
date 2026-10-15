@@ -1,40 +1,49 @@
 // esbuild bundler for the Cutad.AI VS Code extension.
-// Entries:
-//   src/extension.ts        -> dist/extension.js   (the extension bundle; `vscode` is external)
-//   src/spikes/hostSmoke.ts -> dist/host-smoke.js  (S-3 host-proxy spike; runs in plain Node)
+//
+// Production (default):  dist/extension.js, dist/mcp-server.js
+// Development (--dev):   adds the spike entries under src/spikes/ for local evidence runs.
 import esbuild from "esbuild";
+import * as fs from "node:fs";
+import * as path from "node:path";
+import { fileURLToPath } from "node:url";
 
+const root = path.dirname(fileURLToPath(import.meta.url));
 const watch = process.argv.includes("--watch");
+const dev = process.argv.includes("--dev");
+
+const productionEntries = [
+  { in: "src/extension.ts", out: "extension" },
+  { in: "src/mcp-server.ts", out: "mcp-server" },
+];
+
+const spikeEntries = [
+  { in: "src/spikes/hostSmoke.ts", out: "host-smoke" },
+  { in: "src/spikes/reasoningSpike.ts", out: "reasoning-spike" },
+  { in: "src/spikes/langgraphInterruptSpike.ts", out: "langgraph-interrupt-spike" },
+  { in: "src/spikes/seedSkills.ts", out: "seed-skills" },
+  { in: "src/spikes/mcpRoundtripSpike.ts", out: "mcp-roundtrip-spike" },
+];
 
 /** @type {import('esbuild').BuildOptions} */
 const options = {
-  entryPoints: [
-    { in: "src/extension.ts", out: "extension" },
-    { in: "src/mcp-server.ts", out: "mcp-server" },
-    { in: "src/spikes/hostSmoke.ts", out: "host-smoke" },
-    { in: "src/spikes/reasoningSpike.ts", out: "reasoning-spike" },
-    { in: "src/spikes/langgraphInterruptSpike.ts", out: "langgraph-interrupt-spike" },
-    { in: "src/spikes/seedSkills.ts", out: "seed-skills" },
-    { in: "src/spikes/mcpRoundtripSpike.ts", out: "mcp-roundtrip-spike" },
-  ],
+  entryPoints: dev ? [...productionEntries, ...spikeEntries] : productionEntries,
   outdir: "dist",
   bundle: true,
   format: "cjs",
   platform: "node",
   target: "node22",
   external: ["vscode"],
-  sourcemap: true,
-  minify: false,
+  sourcemap: dev,
+  minify: !dev,
   logLevel: "info",
-  // Some ESM-only dependencies (ai, @ai-sdk/*) rely on the "import" export condition.
   conditions: ["node", "import"],
 };
 
 if (watch) {
   const ctx = await esbuild.context(options);
   await ctx.watch();
-  console.log("[esbuild] watching…");
+  console.log(`[esbuild] watching${dev ? " (dev, spikes included)" : " (production)"}…`);
 } else {
   await esbuild.build(options);
-  console.log("[esbuild] build complete");
+  console.log(`[esbuild] ${dev ? "dev" : "production"} build complete`);
 }

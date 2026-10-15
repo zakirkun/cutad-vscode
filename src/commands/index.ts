@@ -1,4 +1,6 @@
 import * as vscode from "vscode";
+import * as fs from "node:fs/promises";
+import * as path from "node:path";
 import { ensureConfigFile, configPath, loadConfig, saveConfig } from "../config/homeConfig";
 import { listModels } from "../llm/gateway";
 import { getLogger } from "../util/logger";
@@ -97,6 +99,32 @@ export function registerCommands(context: vscode.ExtensionContext): void {
     vscode.commands.registerCommand("cutad.openConfig", async () => {
       ensureConfigFile();
       const doc = await vscode.workspace.openTextDocument(configPath());
+      await vscode.window.showTextDocument(doc);
+    }),
+  );
+
+  context.subscriptions.push(
+    vscode.commands.registerCommand("cutad.openPlan", async () => {
+      const workspaceRoot = vscode.workspace.workspaceFolders?.[0]?.uri.fsPath;
+      if (!workspaceRoot) {
+        void vscode.window.showWarningMessage("Cutad.AI: no workspace folder open.");
+        return;
+      }
+      const base = path.resolve(workspaceRoot, ".cutad", "plans");
+      let files: string[];
+      try {
+        files = (await fs.readdir(base)).filter((f) => f.endsWith(".md"));
+      } catch {
+        void vscode.window.showWarningMessage("Cutad.AI: no plans found in .cutad/plans.");
+        return;
+      }
+      if (files.length === 0) {
+        void vscode.window.showWarningMessage("Cutad.AI: no plans found in .cutad/plans.");
+        return;
+      }
+      const picked = await vscode.window.showQuickPick(files, { title: "Cutad.AI — Open Plan" });
+      if (!picked) return;
+      const doc = await vscode.workspace.openTextDocument(path.join(base, picked));
       await vscode.window.showTextDocument(doc);
     }),
   );

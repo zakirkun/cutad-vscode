@@ -9,11 +9,54 @@ import { ApprovalGate, approvalRequestFor } from "../tools/approvalGate";
 import { registerLmTools } from "../tools/lmTools";
 import type { ToolRegistry } from "../tools/spec";
 import { getLogger } from "../util/logger";
+import { generatePlan } from "../agent/plan/generate";
+import {
+  buildPlanExecGraph,
+  runPlanGraph,
+  type StepApprovalRequest,
+  type StepDecision,
+} from "../agent/plan/graph";
+import { planProgress, type PlanArtifact } from "../agent/plan/artifact";
+import { SessionStore } from "../storage/sessionStore";
+import { MemoryState } from "../storage/memoryState";
+import { TempWorkspace } from "../storage/tempWorkspace";
+import { Command } from "@langchain/langgraph";
 
 export const PARTICIPANT_ID = "cutad.chat";
 
 let registry: ToolRegistry | undefined;
 let gate: ApprovalGate | undefined;
+const planGraphs = new Map<string, ReturnType<typeof buildPlanExecGraph>>();
+
+interface ChatSession {
+  store: SessionStore;
+  memory: MemoryState;
+  temp: TempWorkspace;
+  planQueue: string[];
+}
+
+const sessions = new Map<string, ChatSession>();
+
+function sessionFor(request: vscode.ChatRequest, model: string): ChatSession {
+  const key = `${vscode.workspace.workspaceFolders?.[0]?.uri.fsPath ?? "no-workspace"}`;
+  let session = sessions.get(key);
+  if (!session) {
+    const store = SessionStore.create(key, model);
+    session = {
+      store,
+      memory: new MemoryState(store.sessionId, key, model),
+      temp: new TempWorkspace(store.sessionId),
+      planQueue: [],
+    };
+    sessions.set(key, session);
+    getLogger().info(`[session] created ${store.sessionId} (home: ~/.cutad, temp: ${session.temp.root})`);
+  }
+  return session;
+}
+
+export function getActiveSession(): ChatSession | undefined {
+  return [...sessions.values()][0];
+}
 
 export function registerParticipant(context: vscode.ExtensionContext): void {
   registry = createDefaultRegistry();
@@ -29,6 +72,12 @@ export function registerParticipant(context: vscode.ExtensionContext): void {
     provideFollowups(result) {
       const mode = (result.metadata as { mode?: string } | undefined)?.mode;
       if (mode === "help") return [];
+      if (mode === "plan-created") {
+        return [
+          { prompt: "/plan execute", label: "Execute this plan" },
+          { prompt: "Revise the plan", label: "Revise plan" },
+        ];
+      }
       return [
         { prompt: "Explain that in more detail", label: "Explain further" },
         { prompt: "Show a code example", label: "Show code example" },
@@ -72,6 +121,10 @@ const handler: vscode.ChatRequestHandler = async (
   const controller = new AbortController();
   token.onCancellationRequested(() => controller.abort());
 
+  const session = sessionFor(request, config.model);
+  session.memory.incrementTurn();
+  session.store.addMessage("user", request.prompt, command);
+
   const renderState = newRenderState();
   const sink = {
     markdown: (value: string) => stream.markdown(value),
@@ -80,13 +133,41 @@ const handler: vscode.ChatRequestHandler = async (
   };
 
   let lastErrorAction: { command: string; title: string } | undefined;
+  let responseText = "";
   const onEvent = (event: AgentEvent) => {
-    if (event.type === "error") lastErrorAction = errorAction(event.error);
+    if (event.type === "error") {
+      lastErrorAction = errorAction(event.error);
+      session.memory.incrementErrors();
+    }
+    if (event.type === "text-delta") responseText += event.text;
     if (event.type === "rate-limit" && event.remaining !== undefined) {
       updateRateLimitStatus(event.remaining);
     }
     renderEvent(event, sink, renderState, config.reasoning.show);
   };
+
+  const finishTurn = (mode: string) => {
+    session.store.addMessage("assistant", responseText, mode);
+    session.memory.persist();
+    return { metadata: { mode } };
+  };
+
+  if (command === "plan") {
+    const result = await runPlanMode({
+      request,
+      stream,
+      token,
+      onEvent,
+      log: (m) => log.info(m),
+      config,
+      controller,
+      registry,
+      gate,
+      session,
+    });
+    if (lastErrorAction) stream.button(lastErrorAction);
+    return result;
+  }
 
   if (command === "agent") {
     await runAgentMode({
@@ -99,9 +180,10 @@ const handler: vscode.ChatRequestHandler = async (
       controller,
       registry,
       gate,
+      session,
     });
     if (lastErrorAction) stream.button(lastErrorAction);
-    return { metadata: { mode: "agent" } };
+    return finishTurn("agent");
   }
 
   const activeEditor = vscode.window.activeTextEditor;
@@ -136,8 +218,346 @@ const handler: vscode.ChatRequestHandler = async (
   await runAsk({ config, prompt, signal: controller.signal, onEvent });
 
   if (lastErrorAction) stream.button(lastErrorAction);
-  return { metadata: { mode: "ask" } };
+  return finishTurn("ask");
 };
+
+interface PlanModeArgs {
+  request: vscode.ChatRequest;
+  stream: vscode.ChatResponseStream;
+  token: vscode.CancellationToken;
+  onEvent: (event: AgentEvent) => void;
+  log: (message: string) => void;
+  config: ReturnType<typeof loadConfig>;
+  controller: AbortController;
+  registry: ToolRegistry | undefined;
+  gate: ApprovalGate | undefined;
+  session: ChatSession;
+}
+
+async function runPlanMode(args: PlanModeArgs): Promise<vscode.ChatResult> {
+  const { request, stream, token, onEvent, config, controller, registry, gate, log, session } = args;
+
+  const prompt = request.prompt.trim();
+
+  if (/^execute\b/i.test(prompt)) {
+    const slugArg = prompt.replace(/^execute\b/i, "").trim();
+    return executePlan({
+      slugArg,
+      stream,
+      token,
+      onEvent,
+      config,
+      controller,
+      registry,
+      gate,
+      log,
+      session,
+    });
+  }
+
+  if (!prompt || /^list$/i.test(prompt)) {
+    const plans = session.store.listPlans();
+    if (plans.length === 0) {
+      stream.markdown("No plans yet in this session. Create one with `/plan <your goal>`.");
+      return { metadata: { mode: "help" } };
+    }
+    stream.markdown(
+      [
+        "**Plans in this session** _(stored in ~/.cutad/cutad.db)_:",
+        "",
+        ...plans.map((p) => {
+          const artifact = JSON.parse(p.artifactJson) as PlanArtifact;
+          const { done, total } = planProgress(artifact);
+          return `- \`${p.slug}\` — ${p.title} (${p.status}, ${done}/${total} steps)`;
+        }),
+        "",
+        "Execute one with `/plan execute <slug>`.",
+      ].join("\n"),
+    );
+    return { metadata: { mode: "help" } };
+  }
+
+  stream.progress("Generating plan…");
+  const contextInfo = await assembleContext({
+    references: request.references,
+    activeEditor: vscode.window.activeTextEditor,
+    contextWindow: 200_000,
+    truncateKB: config.tools.truncateKB,
+  });
+
+  const generated = await generatePlan({
+    config,
+    goal: prompt,
+    contextText: contextInfo.text,
+    signal: controller.signal,
+  });
+
+  if (generated.error || !generated.plan) {
+    stream.markdown(`**Plan generation failed:** ${generated.error?.detail ?? "unknown error"}`);
+    return { metadata: { mode: "help" } };
+  }
+
+  const plan = generated.plan;
+  persistPlan(session, plan);
+  log(`[plan] saved ${plan.slug} to session db`);
+
+  stream.markdown(renderPlanMarkdown(plan));
+  stream.markdown(`\n\n_Saved to session database (~/.cutad/cutad.db)_`);
+  stream.markdown(
+    "\n\nRun **`/plan execute " + plan.slug + "`** to start executing with step-by-step approval.",
+  );
+  return { metadata: { mode: "plan-created", slug: plan.slug } };
+}
+
+function persistPlan(session: ChatSession, plan: PlanArtifact): void {
+  session.store.savePlan(plan.slug, plan.title, plan.goal, plan.status, JSON.stringify(plan));
+  session.memory.setActivePlan({
+    slug: plan.slug,
+    status: plan.status,
+    cursor: plan.steps.filter((s) => s.status === "done" || s.status === "skipped").length,
+    total: plan.steps.length,
+  });
+}
+
+interface ExecutePlanArgs {
+  slugArg: string;
+  stream: vscode.ChatResponseStream;
+  token: vscode.CancellationToken;
+  onEvent: (event: AgentEvent) => void;
+  config: ReturnType<typeof loadConfig>;
+  controller: AbortController;
+  registry: ToolRegistry | undefined;
+  gate: ApprovalGate | undefined;
+  log: (message: string) => void;
+  session: ChatSession;
+}
+
+async function executePlan(args: ExecutePlanArgs): Promise<vscode.ChatResult> {
+  const { slugArg, stream, token, onEvent, config, controller, registry, gate, log, session } = args;
+
+  if (!registry || !gate) {
+    stream.markdown("**Planning unavailable:** registry not initialized.");
+    return { metadata: { mode: "help" } };
+  }
+
+  const workspaceRoot = vscode.workspace.workspaceFolders?.[0]?.uri.fsPath;
+  if (!workspaceRoot) {
+    stream.markdown("**Plan execution needs an open workspace folder.**");
+    return { metadata: { mode: "help" } };
+  }
+
+  let plan: PlanArtifact;
+  if (slugArg) {
+    const record = session.store.getPlan(slugArg);
+    if (!record) {
+      stream.markdown(`Plan \`${slugArg}\` not found in this session. Use \`/plan list\`.`);
+      return { metadata: { mode: "help" } };
+    }
+    plan = JSON.parse(record.artifactJson) as PlanArtifact;
+  } else {
+    const records = session.store.listPlans();
+    if (records.length === 0) {
+      stream.markdown("No plans found. Create one with `/plan <goal>`.");
+      return { metadata: { mode: "help" } };
+    }
+    const picked = await vscode.window.showQuickPick(
+      records.map((p) => ({
+        label: p.slug,
+        description: `${p.status} · updated ${p.updatedAt.slice(0, 16)}`,
+        detail: p.title,
+        record: p,
+      })),
+      { title: "Cutad.AI — Execute which plan?" },
+    );
+    if (!picked) return { metadata: { mode: "help" } };
+    plan = JSON.parse(picked.record.artifactJson) as PlanArtifact;
+  }
+
+  if (plan.steps.length === 0) {
+    stream.markdown(`Plan \`${plan.slug}\` has no steps.`);
+    return { metadata: { mode: "help" } };
+  }
+
+  plan = { ...plan, status: "in-progress" };
+  persistPlan(session, plan);
+
+  const threadId = `plan-${session.store.sessionId}-${plan.slug}`;
+  let graph = planGraphs.get(threadId);
+  if (!graph) {
+    graph = buildPlanExecGraph({
+      executeStep: async (step) =>
+        executeStepWithAgent({
+          step,
+          config,
+          registry: registry!,
+          gate: gate!,
+          controller,
+          token,
+          workspaceRoot,
+          onEvent,
+          session,
+        }),
+      persist: async (updated) => {
+        persistPlan(session, updated);
+      },
+      onProgress: (message) => {
+        log(`[plan] ${message}`);
+        stream.progress(message);
+      },
+    });
+    planGraphs.set(threadId, graph);
+  }
+
+  const state = await graph.getState({ configurable: { thread_id: threadId } });
+  const hasCheckpoint = Boolean((state.values as { plan?: PlanArtifact }).plan);
+  const starting = hasCheckpoint ? new Command({ resume: "approve" }) : { plan };
+
+  stream.markdown(`**Executing plan: ${plan.title}** (${plan.steps.length} steps)\n`);
+
+  let outcome = await runPlanGraph(graph, threadId, starting as never);
+  let guard = 0;
+
+  while (!outcome.finished && outcome.pendingApproval && guard++ < 50) {
+    const approval = outcome.pendingApproval;
+    stream.markdown(
+      [
+        "",
+        `### Step ${approval.stepIndex}: ${approval.stepTitle}${approval.isRetry ? " _(retry)_" : ""}`,
+        "",
+        approval.objective,
+        approval.files.length ? `\n**Files:** ${approval.files.map((f) => `\`${f}\``).join(", ")}` : "",
+        approval.verify ? `\n**Verify:** \`${approval.verify}\`` : "",
+      ].join("\n"),
+    );
+
+    const decision = await askStepDecision(approval);
+    if (token.isCancellationRequested) {
+      stream.markdown("\n\n_(plan execution canceled)_");
+      break;
+    }
+
+    outcome = await runPlanGraph(graph, threadId, new Command({ resume: decision }));
+  }
+
+  if (outcome.finished) {
+    const { done, total } = planProgress(outcome.plan);
+    stream.markdown(
+      [
+        "",
+        "---",
+        `**Plan finished** — status: ${outcome.plan.status} · ${done}/${total} steps done`,
+        "",
+        outcome.plan.steps.map((s) => `- ${statusIcon(s.status)} ${s.index}. ${s.title}`).join("\n"),
+      ].join("\n"),
+    );
+  }
+
+  return { metadata: { mode: "plan-executed", slug: plan.slug } };
+}
+
+async function askStepDecision(approval: StepApprovalRequest): Promise<StepDecision> {
+  const items: Array<vscode.QuickPickItem & { decision: StepDecision }> = [
+    { label: "$(check) Approve this step", decision: "approve" },
+    { label: "$(check-all) Approve all remaining", decision: "approve-all" },
+    { label: "$(debug-step-over) Skip this step", decision: "skip" },
+    { label: "$(x) Abort plan", decision: "abort" },
+  ];
+  const picked = await vscode.window.showQuickPick(items, {
+    title: `Cutad.AI — Step ${approval.stepIndex}: ${approval.stepTitle}`,
+    placeHolder: approval.objective.slice(0, 120),
+    ignoreFocusOut: true,
+  });
+  return picked?.decision ?? "abort";
+}
+
+interface ExecuteStepArgs {
+  step: { index: number; title: string; objective: string; files: string[]; verify?: string };
+  config: ReturnType<typeof loadConfig>;
+  registry: ToolRegistry;
+  gate: ApprovalGate;
+  controller: AbortController;
+  token: vscode.CancellationToken;
+  workspaceRoot: string;
+  onEvent: (event: AgentEvent) => void;
+  session: ChatSession;
+}
+
+async function executeStepWithAgent(args: ExecuteStepArgs): Promise<{ ok: boolean; summary: string }> {
+  const { step, config, registry, gate, controller, token, workspaceRoot, onEvent, session } = args;
+  const prompt = [
+    `You are executing step ${step.index} of a plan: "${step.title}".`,
+    `Objective: ${step.objective}`,
+    step.files.length ? `Expected files: ${step.files.join(", ")}` : "",
+    step.verify ? `After changes, run this verification command: ${step.verify}` : "",
+    "Complete only this step. Report what you changed and the verification result.",
+  ]
+    .filter(Boolean)
+    .join("\n");
+
+  const result = await runAgent({
+    config,
+    prompt,
+    registry,
+    signal: controller.signal,
+    token,
+    workspaceRoot,
+    approve: async (req) => {
+      const spec = registry.get(req.toolId);
+      if (!spec) return "deny";
+      return gate.request(spec, approvalRequestFor(spec, req.summary, req.detail));
+    },
+    onEvent: (event) => {
+      recordToolEvent(session, event);
+      onEvent(event);
+    },
+    log: () => undefined,
+    maxIterations: config.agent.maxIterations,
+  });
+
+  session.memory.incrementToolCalls(result.toolCalls);
+  session.memory.incrementDenials(result.denied);
+  session.memory.recordFilesChanged(result.filesChanged);
+
+  const ok = result.denied === 0 && result.toolCalls > 0;
+  return {
+    ok,
+    summary: `${result.toolCalls} tool calls, files: ${result.filesChanged.join(", ") || "none"}`,
+  };
+}
+
+function recordToolEvent(session: ChatSession, event: AgentEvent): void {
+  if (event.type === "tool-end") {
+    session.store.addToolUsage(event.toolId, event.preview.slice(0, 120), event.ok, !event.ok);
+  }
+}
+
+function renderPlanMarkdown(plan: PlanArtifact): string {
+  return [
+    `## Plan: ${plan.title}`,
+    "",
+    plan.goal,
+    "",
+    ...plan.steps.map(
+      (s) =>
+        `- [ ] **${s.index}. ${s.title}**\n  ${s.objective}${s.files.length ? `\n  Files: ${s.files.map((f) => `\`${f}\``).join(", ")}` : ""}${s.verify ? `\n  Verify: \`${s.verify}\`` : ""}`,
+    ),
+  ].join("\n");
+}
+
+function statusIcon(status: string): string {
+  switch (status) {
+    case "done":
+      return "✅";
+    case "skipped":
+      return "⏭️";
+    case "failed":
+      return "❌";
+    case "in-progress":
+      return "🔄";
+    default:
+      return "⬜";
+  }
+}
 
 interface AgentModeArgs {
   request: vscode.ChatRequest;
@@ -149,10 +569,11 @@ interface AgentModeArgs {
   controller: AbortController;
   registry: ToolRegistry | undefined;
   gate: ApprovalGate | undefined;
+  session: ChatSession;
 }
 
 async function runAgentMode(args: AgentModeArgs): Promise<void> {
-  const { request, stream, token, onEvent, log, config, controller, registry, gate } = args;
+  const { request, stream, token, onEvent, log, config, controller, registry, gate, session } = args;
   if (!registry || !gate) {
     stream.markdown("**Agent unavailable:** tool registry not initialized.");
     return;
@@ -175,6 +596,7 @@ async function runAgentMode(args: AgentModeArgs): Promise<void> {
     `<user_request>\n${request.prompt}\n</user_request>`,
     contextInfo.text ? `<workspace_context>\n${contextInfo.text}\n</workspace_context>` : "",
     `Workspace root: ${workspaceRoot}`,
+    `Session scratch dir (use for temporary files): ${session.temp.root}`,
   ]
     .filter(Boolean)
     .join("\n\n");
@@ -193,10 +615,17 @@ async function runAgentMode(args: AgentModeArgs): Promise<void> {
       if (!spec) return "deny";
       return gate.request(spec, approvalRequestFor(spec, req.summary, req.detail));
     },
-    onEvent,
+    onEvent: (event) => {
+      recordToolEvent(session, event);
+      onEvent(event);
+    },
     log,
     maxIterations: config.agent.maxIterations,
   });
+
+  session.memory.incrementToolCalls(result.toolCalls);
+  session.memory.incrementDenials(result.denied);
+  session.memory.recordFilesChanged(result.filesChanged);
 
   const summary: string[] = ["", "---", "**Agent run complete**"];
   summary.push(`- Tool calls: ${result.toolCalls}${result.denied > 0 ? ` (${result.denied} denied)` : ""}`);
@@ -220,8 +649,6 @@ function buildPrompt(userPrompt: string, contextText: string, history: string): 
 
 function modeNotice(command: string): string | undefined {
   switch (command) {
-    case "plan":
-      return "**`/plan` arrives in Phase 3** — durable plan artifacts with step execution. Use `/agent` or plain messages for now.";
     case "debug":
       return "**`/debug` arrives in Phase 4** — debugger and test-state investigation. Use `/agent` or plain messages for now.";
     default:
@@ -237,11 +664,13 @@ function helpMarkdown(model: string, toolCount: number): string {
     "|---|---|",
     "| `/ask` | ✅ available (default) |",
     "| `/agent` | ✅ available — coding agent with tools + approvals |",
-    "| `/plan` | Phase 3 |",
+    "| `/plan <goal>` | ✅ available — generate a durable plan |",
+    "| `/plan execute [slug]` | ✅ available — execute with step approvals |",
+    "| `/plan list` | ✅ list saved plans |",
     "| `/debug` | Phase 4 |",
     "| `/help` | ✅ this message |",
     "",
-    `Config: \`${configPath()}\` · Commands: **Test Connection**, **Select Model**, **Open Config**`,
+    `Config: \`${configPath()}\` · Plans: \`.cutad/plans/\``,
   ].join("\n");
 }
 

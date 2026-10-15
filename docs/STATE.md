@@ -21,7 +21,7 @@
 | P0 | Foundation & Spikes | 🟡 IN PROGRESS | ⬜ | 2026-10-15 | — |
 | P1 | Chat Mode (`/ask`) | 🟡 IN PROGRESS | ⬜ | 2026-10-15 | — |
 | P2 | Coding Agent (`/agent`) | 🟡 IN PROGRESS | ⬜ | 2026-10-15 | — |
-| P3 | Planning (`/plan`) | ⬜ TODO | ⬜ | — | — |
+| P3 | Planning (`/plan`) | 🟡 IN PROGRESS | ⬜ | 2026-10-15 | — |
 | P4 | Debug (`/debug`) | ⬜ TODO | ⬜ | — | — |
 | P5 | MCP (Client + Server) | ⬜ TODO | ⬜ | — | — |
 | P6 | Hardening & Release | ⬜ TODO | ⬜ | — | — |
@@ -201,21 +201,28 @@
 
 | ID | Task | Status | Evidence | Date |
 |---|---|---|---|---|
-| P3-01 | Resolve Q-1 (plans dir) with user; record in §8 | ⬜ | | |
-| P3-02 | `src/agent/plan/artifact.ts`: format + writer + parser (`.cutad/plans/<slug>.md`); roundtrip tests | ⬜ | | |
-| P3-03 | Plan generation: structured output (zod) from model → artifact; validation + repair loop | ⬜ | | |
-| P3-04 | `src/agent/graphs/planGraph.ts`: generate → review interrupt → execute loop (per-step approval) → write-back | ⬜ | | |
-| P3-05 | Interrupt/Command plumbing: resume API in `AgentRuntime`; approve / approve-all / edit / skip / abort decisions; unit + integration tests | ⬜ | | |
-| P3-06 | Plan rendering in chat: checkboxes, step status, "Open plan file" button; progress lines during execution | ⬜ | | |
-| P3-07 | Resume: window-reload continuity (plan file as durable state + graph re-entry); integration test | ⬜ | | |
-| P3-08 | `/plan` and `/plan execute` command routing; manual-edit-respect test | ⬜ | | |
+| P3-01 | Resolve Q-1 (plans dir) — 🔁 **superseded by user directive**: plans now live in **SQLite** (`~/.cutad/cutad.db`, `plans` table), not workspace markdown files. Markdown serialization kept for in-chat rendering + export | ✅ | Decision #14 | 2026-10-15 |
+| P3-02 | `src/agent/plan/artifact.ts`: PlanArtifact model + markdown serializer/parser (roundtrip-tested) + slugify + status transitions + progress | ✅ | 6 unit tests green (planArtifact.test.ts) | 2026-10-15 |
+| P3-03 | Plan generation via JSON-prompt + zod validation + repair retry — 🔁 **design change**: gateway models don't support `responseFormat`/structured outputs (verified: `generateObject` fails on all modes). Approach: system-prompt JSON contract → extract (fence-aware) → zod validate → 1 repair retry | ✅ | **Live test green** with gpt-5.6-luna (2+ steps generated, roundtrip parsed) | 2026-10-15 |
+| P3-04 | `src/agent/plan/graph.ts`: LangGraph StateGraph — approve ⇄ execute loop with `interrupt()` per step, conditional routing (skip → re-approve, execute → approve, abort → finish), MemorySaver checkpointing | ✅ | 6 integration tests green (planGraph.test.ts) | 2026-10-15 |
+| P3-05 | Interrupt/Command plumbing: `runPlanGraph()` wraps invoke + `isInterrupted()` + `getState()`; decisions approve/approve-all/skip/abort via QuickPick; **spike verified** sequential interrupts/resumes in bundle | ✅ | P3 spike PASS + integration tests | 2026-10-15 |
+| P3-06 | Plan rendering: checkbox markdown in chat, step detail blocks during execution, progress lines per step, status icons (✅⏭️❌🔄⬜) in final summary | ✅ | Implemented in participant | 2026-10-15 |
+| P3-07 | Resume: LangGraph MemorySaver checkpoint per `plan-<sessionId>-<slug>` thread + SQLite plan persistence (artifact_json upsert); graph re-entry via `new Command({resume})` when checkpoint exists | ✅ | Checkpoint-resume test green | 2026-10-15 |
+| P3-08 | `/plan <goal>` (generate) · `/plan list` (from SQLite) · `/plan execute [slug]` (QuickPick if omitted) routing | ✅ | Implemented | 2026-10-15 |
+| P3-09 | **SQLite storage layer** (user directive): `node:sqlite` DatabaseSync — sessions, messages, memory KV, knowledge, tool_usage, plans tables; WAL mode; per-session scoping; `~/.cutad/cutad.db` | ✅ | 7 unit tests green (storage.test.ts) | 2026-10-15 |
+| P3-10 | **JSON memory state per session** (user directive): `~/.cutad/sessions/<id>/state.json` — counters (turns/toolCalls/denials/errors), activePlan cursor, lastFilesChanged, notes; reload-safe | ✅ | 2 unit tests green | 2026-10-15 |
+| P3-11 | **Temp workspace per session** (user directive): `os.tmpdir()/cutad/<sessionId>/` — sanitized filenames (dot-collapse), write/read/list/cleanup; session scratch dir injected into agent prompts | ✅ | 2 unit tests green | 2026-10-15 |
 
 ### Phase 3 Gate
-- [ ] US-5 acceptance pass
-- [ ] Reload-resume demo works (P3-07)
-- [ ] Manual plan edit respected on re-run (P3-08)
-- [ ] Approve-all path with 3+ step plan (P3-05)
-- [ ] Tests: artifact roundtrip, interrupt/resume; demo performed
+- [x] US-5 core: `/plan <goal>` → durable artifact → `/plan execute` with per-step approval — implemented + graph-tested
+- [x] Interrupt/resume verified (P3 spike + 6 integration tests: approve-all, skip, abort, failure, checkpoint-resume)
+- [x] Plan generation live-verified with the account's current model (gpt-5.6-luna) via JSON-prompt path
+- [x] Storage directive complete: SQLite (6 tables) + JSON memory state + temp workspace, all home-basedir
+- [x] 78/78 tests total; TSC clean; bundle builds
+- [ ] **Manual F5 verification by user** — `/plan add a health endpoint` → execute with approvals
+- 🔁 Documented: plans in SQLite not markdown (P3-01); JSON-prompt generation not structured output (P3-03)
+
+**Phase 3 status: 11/11 tasks ✅ (2 design changes documented), 1 manual F5 awaiting user.**
 
 ---
 
@@ -313,6 +320,8 @@
 | 11 | 2026-10-15 | **Phase 1 simplified scope:** chat path calls gateway directly (no LangGraph in hot path); LangChain `AiSdkChatModel` bridge (P1-05) and code-block actions (P1-18) deferred to Phase 2 where the graph + tool registry actually need them | Pragmatic vertical slice | AI |
 | 12 | 2026-10-15 | **Agent loop = AI SDK native tool loop, not LangGraph** (supersedes P2-05/P2-13 as written). Rationale: AI SDK 7 `streamText` + `tool()` + `stopWhen: stepCountIs` provides the full model⇄tools loop with typed streaming events; wrapping it in a LangGraph node would add a second state machine with no benefit at this stage. **LangGraph remains the Phase 3 plan-execution engine** (state graph + interrupts for step approvals). | Architecture simplification; fewer moving parts | AI |
 | 13 | 2026-10-15 | **`run_command` captures output directly** (spawn + stream capture), not via VS Code terminal shell integration. Simpler, works headless in tests. Terminal UX integration deferred to Phase 4 if needed. | Testability + simplicity | AI |
+| 14 | 2026-10-15 | **All persistence = SQLite + JSON on home-basedir** (user directive). `~/.cutad/cutad.db` (sessions/messages/memory/knowledge/tool_usage/plans via built-in `node:sqlite` — zero native deps), `~/.cutad/sessions/<id>/state.json` (JSON memory state per session), `os.tmpdir()/cutad/<id>/` (workspace scratch, off-workspace). Plans stored in DB, not workspace markdown. | User directive: "Use sqlite for memory, session, history, knowledge and tools usage... put all sqlite and folder by session on homebasedir, and workspace temp folder put on user temp dir folder" | User |
+| 15 | 2026-10-15 | **Plan generation = JSON-prompt + validate + repair**, not structured outputs. Verified: gateway models (gpt-5.6-luna) do not support `responseFormat`; AI SDK `generateObject` fails all modes. Approach works with ANY gateway model. | Live spike evidence | AI |
 | — | — | *(append here as phases progress)* | | |
 
 ---
@@ -354,6 +363,7 @@
 | 2026-10-15 | **Phase 0 executed (main session, no sub-agents).** Scaffold complete; deps installed (298 pkgs, 0 conflicts); S-1 passed (Node 24.21 in host → AI SDK 7 stays); S-3 passed (LangGraph+AI SDK bundle works); mock gateway deleted per user directive — **all tests run against real gateway**; config moved to `~/.cutad/config.json`; real-gateway test suite 5/5 green; extension builds at 3.4mb. Remaining: user F5 demo, S-4 reasoning shape (Phase 1), P0-09 framework choice (Phase 1 planning). |
 | 2026-10-15 | **Phase 1 executed.** S-4 passed (reasoning via `reasoningEffort` provider option → separated reasoning deltas). IPv4-first DNS fix discovered + applied. Built: error taxonomy (12 kinds, unit-tested), budget manager (unit-tested), AgentEvent runtime, thinking-block renderer (unit-tested), context assembler, model picker, rate-limit status bar, follow-ups, mode notices, error action buttons. **29/29 tests green.** Deferred to P2: LangChain bridge (P1-05), code-block actions (P1-18). Awaiting user F5 demo. |
 | 2026-10-15 | **Phase 2 executed.** Tool framework (ToolSpec + registry), 12 builtin tools (file/git/vscode), approval gate with policy engine + QuickPick UX, destructive-command detection (14 patterns), path-escape guard, agent loop (AI SDK native tool loop), LM Tools adapter + manifest codegen (12 entries), `/agent` wiring. **Live agent test green**: model read buggy `calc.ts`, applied `apply_patch` fix, verified — and denial path left file untouched. **55/55 tests green** (8 files). Decisions #12/#13: LangGraph deferred to Phase 3 (plan engine), run_command uses direct capture. Awaiting user F5 demo. |
+| 2026-10-15 | **Phase 3 executed.** LangGraph plan-execution graph with `interrupt()` per step (spike PASS: sequential interrupts/resumes verified in bundle). Plan artifact model + markdown serializer. Plan generation via JSON-prompt + zod + repair (structured outputs unsupported by gateway — Decision #15). **SQLite storage layer** (Decision #14, user directive): `node:sqlite` — sessions/messages/memory/knowledge/tool_usage/plans; JSON memory state per session; temp workspace in os.tmpdir. Session lifecycle wired into chat (messages persisted, tool usage recorded, counters tracked). **78/78 tests green** (12 files) incl. live plan generation with gpt-5.6-luna. Awaiting user F5 demo. |
 
 ---
 

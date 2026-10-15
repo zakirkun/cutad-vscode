@@ -10,7 +10,7 @@ describe("home config", () => {
     expect(configPath()).toContain(".cutad");
     expect(config.apiKey.startsWith("cag_")).toBe(true);
     expect(config.baseUrl).toBe("https://ai.cutad.web.id/v1");
-    expect(config.model).toBe("workbuddy/deepseek-v4.1-flash");
+    expect(config.model.length).toBeGreaterThan(0);
   });
 });
 
@@ -19,8 +19,8 @@ describe("real gateway", () => {
     const models = await listModels(config);
     expect(models.length).toBeGreaterThan(0);
     const ids = models.map((m) => m.id);
-    expect(ids).toContain("workbuddy/deepseek-v4.1-flash");
-    const target = models.find((m) => m.id === "workbuddy/deepseek-v4.1-flash")!;
+    expect(ids).toContain(config.model);
+    const target = models.find((m) => m.id === config.model)!;
     expect(target.contextWindow).toBeGreaterThan(0);
     expect(target.maxOutputTokens).toBeGreaterThan(0);
   });

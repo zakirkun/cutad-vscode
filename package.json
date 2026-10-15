@@ -79,6 +79,10 @@
       {
         "command": "cutad.openConfig",
         "title": "Cutad.AI: Open Config File (~/.cutad/config.json)"
+      },
+      {
+        "command": "cutad.openPlan",
+        "title": "Cutad.AI: Open Plan"
       }
     ],
     "configuration": {

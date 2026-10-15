@@ -12,6 +12,7 @@ const options = {
     { in: "src/extension.ts", out: "extension" },
     { in: "src/spikes/hostSmoke.ts", out: "host-smoke" },
     { in: "src/spikes/reasoningSpike.ts", out: "reasoning-spike" },
+    { in: "src/spikes/langgraphInterruptSpike.ts", out: "langgraph-interrupt-spike" },
   ],
   outdir: "dist",
   bundle: true,

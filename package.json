@@ -57,6 +57,10 @@
             "description": "List installed skills"
           },
           {
+            "name": "mcp",
+            "description": "Show MCP server status"
+          },
+          {
             "name": "help",
             "description": "Show Cutad.AI help"
           }
@@ -87,6 +91,14 @@
       {
         "command": "cutad.openPlan",
         "title": "Cutad.AI: Open Plan"
+      },
+      {
+        "command": "cutad.startMcpServer",
+        "title": "Cutad.AI: Start MCP Server"
+      },
+      {
+        "command": "cutad.reconnectMcp",
+        "title": "Cutad.AI: Reconnect MCP Servers"
       }
     ],
     "configuration": {
@@ -373,6 +385,104 @@
         }
       },
       {
+        "name": "cutad_run_command",
+        "tags": [
+          "cutad"
+        ],
+        "toolReferenceName": "run_command",
+        "displayName": "Run Command",
+        "modelDescription": "Run a shell command in a terminal and capture its output. Use for builds, tests, and CLI tools. Avoid long-running processes (dev servers).",
+        "userDescription": "Run a terminal command",
+        "canBeReferencedInPrompt": true,
+        "icon": "$(sparkle)",
+        "inputSchema": {
+          "type": "object",
+          "properties": {
+            "command": {
+              "type": "string",
+              "description": "The exact shell command to run"
+            },
+            "cwd": {
+              "description": "Working directory (default: workspace root)",
+              "type": "string"
+            },
+            "timeoutSeconds": {
+              "description": "Timeout (default 120)",
+              "type": "integer",
+              "minimum": 5,
+              "maximum": 300
+            }
+          },
+          "required": [
+            "command"
+          ],
+          "additionalProperties": false
+        }
+      },
+      {
+        "name": "cutad_run_tests",
+        "tags": [
+          "cutad"
+        ],
+        "toolReferenceName": "run_tests",
+        "displayName": "Run Tests",
+        "modelDescription": "Run the project's test command (auto-detected from package.json or overridable) and return a parsed summary with failure details. Use to verify changes or reproduce reported failures.",
+        "userDescription": "Run the project test suite",
+        "canBeReferencedInPrompt": true,
+        "icon": "$(sparkle)",
+        "inputSchema": {
+          "type": "object",
+          "properties": {
+            "command": {
+              "description": "Override test command (default: auto-detect npm test / pytest / cargo test)",
+              "type": "string"
+            },
+            "filter": {
+              "description": "Test name filter (passed to the runner when supported)",
+              "type": "string"
+            },
+            "timeoutSeconds": {
+              "description": "Timeout (default 300)",
+              "type": "integer",
+              "minimum": 10,
+              "maximum": 600
+            }
+          },
+          "additionalProperties": false
+        }
+      },
+      {
+        "name": "cutad_fetch_url",
+        "tags": [
+          "cutad"
+        ],
+        "toolReferenceName": "fetch_url",
+        "displayName": "Fetch URL",
+        "modelDescription": "Fetch a URL (documentation, API reference, changelog) and return its text content, stripped of HTML. Use for looking up external documentation when the installed sources are not enough.",
+        "userDescription": "Fetch a web page (documentation lookup)",
+        "canBeReferencedInPrompt": true,
+        "icon": "$(sparkle)",
+        "inputSchema": {
+          "type": "object",
+          "properties": {
+            "url": {
+              "type": "string",
+              "description": "HTTP(S) URL to fetch"
+            },
+            "maxChars": {
+              "description": "Max characters (default 30000)",
+              "type": "integer",
+              "minimum": 1000,
+              "maximum": 100000
+            }
+          },
+          "required": [
+            "url"
+          ],
+          "additionalProperties": false
+        }
+      },
+      {
         "name": "cutad_get_diagnostics",
         "tags": [
           "cutad"
@@ -433,41 +543,6 @@
         "inputSchema": {
           "type": "object",
           "properties": {},
-          "additionalProperties": false
-        }
-      },
-      {
-        "name": "cutad_run_command",
-        "tags": [
-          "cutad"
-        ],
-        "toolReferenceName": "run_command",
-        "displayName": "Run Command",
-        "modelDescription": "Run a shell command in a terminal and capture its output. Use for builds, tests, and CLI tools. Avoid long-running processes (dev servers).",
-        "userDescription": "Run a terminal command",
-        "canBeReferencedInPrompt": true,
-        "icon": "$(sparkle)",
-        "inputSchema": {
-          "type": "object",
-          "properties": {
-            "command": {
-              "type": "string",
-              "description": "The exact shell command to run"
-            },
-            "cwd": {
-              "description": "Working directory (default: workspace root)",
-              "type": "string"
-            },
-            "timeoutSeconds": {
-              "description": "Timeout (default 120)",
-              "type": "integer",
-              "minimum": 5,
-              "maximum": 300
-            }
-          },
-          "required": [
-            "command"
-          ],
           "additionalProperties": false
         }
       },
@@ -611,69 +686,6 @@
               "type": "string"
             }
           },
-          "additionalProperties": false
-        }
-      },
-      {
-        "name": "cutad_run_tests",
-        "tags": [
-          "cutad"
-        ],
-        "toolReferenceName": "run_tests",
-        "displayName": "Run Tests",
-        "modelDescription": "Run the project's test command (auto-detected from package.json or overridable) and return a parsed summary with failure details. Use to verify changes or reproduce reported failures.",
-        "userDescription": "Run the project test suite",
-        "canBeReferencedInPrompt": true,
-        "icon": "$(sparkle)",
-        "inputSchema": {
-          "type": "object",
-          "properties": {
-            "command": {
-              "description": "Override test command (default: auto-detect npm test / pytest / cargo test)",
-              "type": "string"
-            },
-            "filter": {
-              "description": "Test name filter (passed to the runner when supported)",
-              "type": "string"
-            },
-            "timeoutSeconds": {
-              "description": "Timeout (default 300)",
-              "type": "integer",
-              "minimum": 10,
-              "maximum": 600
-            }
-          },
-          "additionalProperties": false
-        }
-      },
-      {
-        "name": "cutad_fetch_url",
-        "tags": [
-          "cutad"
-        ],
-        "toolReferenceName": "fetch_url",
-        "displayName": "Fetch URL",
-        "modelDescription": "Fetch a URL (documentation, API reference, changelog) and return its text content, stripped of HTML. Use for looking up external documentation when the installed sources are not enough.",
-        "userDescription": "Fetch a web page (documentation lookup)",
-        "canBeReferencedInPrompt": true,
-        "icon": "$(sparkle)",
-        "inputSchema": {
-          "type": "object",
-          "properties": {
-            "url": {
-              "type": "string",
-              "description": "HTTP(S) URL to fetch"
-            },
-            "maxChars": {
-              "description": "Max characters (default 30000)",
-              "type": "integer",
-              "minimum": 1000,
-              "maximum": 100000
-            }
-          },
-          "required": [
-            "url"
-          ],
           "additionalProperties": false
         }
       }

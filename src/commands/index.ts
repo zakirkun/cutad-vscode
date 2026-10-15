@@ -96,6 +96,48 @@ export function registerCommands(context: vscode.ExtensionContext): void {
   );
 
   context.subscriptions.push(
+    vscode.commands.registerCommand("cutad.startMcpServer", async () => {
+      const { getActiveSession } = await import("../chat/participant");
+      const session = getActiveSession();
+      const workspaceRoot = vscode.workspace.workspaceFolders?.[0]?.uri.fsPath;
+
+      const terminal = vscode.window.createTerminal({
+        name: "Cutad.AI MCP Server",
+        cwd: workspaceRoot ?? session?.temp.root,
+        hideFromUser: false,
+      });
+      const serverPath = path.join(context.extensionPath, "dist", "mcp-server.js");
+      const args = workspaceRoot ? ` --workspace "${workspaceRoot}"` : "";
+      terminal.sendText(`node "${serverPath}"${args}`, true);
+      terminal.show();
+      void vscode.window.showInformationMessage(
+        "Cutad.AI: MCP server starting in the terminal. External clients connect via stdio to this process.",
+      );
+      getLogger().info(`[mcp] server started: node ${serverPath}${args}`);
+    }),
+  );
+
+  context.subscriptions.push(
+    vscode.commands.registerCommand("cutad.reconnectMcp", async () => {
+      const { getMcpClient } = await import("../chat/participant");
+      const client = getMcpClient();
+      if (!client) {
+        void vscode.window.showWarningMessage("Cutad.AI: MCP client not initialized.");
+        return;
+      }
+      client.discoverConfigs();
+      await vscode.window.withProgress(
+        { location: vscode.ProgressLocation.Notification, title: "Cutad.AI: reconnecting MCP servers…" },
+        () => client.connectAll(),
+      );
+      const states = client.list();
+      void vscode.window.showInformationMessage(
+        `Cutad.AI: ${states.filter((s) => s.status === "connected").length}/${states.length} MCP server(s) connected.`,
+      );
+    }),
+  );
+
+  context.subscriptions.push(
     vscode.commands.registerCommand("cutad.openConfig", async () => {
       ensureConfigFile();
       const doc = await vscode.workspace.openTextDocument(configPath());

@@ -22,6 +22,7 @@ import { MemoryState } from "../storage/memoryState";
 import { TempWorkspace } from "../storage/tempWorkspace";
 import { SkillEngine, ensureSkillUsageTable } from "../skills/engine";
 import { maybeLearnSkill } from "../agent/skillLearner";
+import { McpClientManager } from "../tools/builtin/mcpClient";
 import { Command } from "@langchain/langgraph";
 
 export const PARTICIPANT_ID = "cutad.chat";
@@ -29,6 +30,7 @@ export const PARTICIPANT_ID = "cutad.chat";
 let registry: ToolRegistry | undefined;
 let gate: ApprovalGate | undefined;
 let skillEngine: SkillEngine | undefined;
+let mcpClient: McpClientManager | undefined;
 const planGraphs = new Map<string, ReturnType<typeof buildPlanExecGraph>>();
 
 interface ChatSession {
@@ -65,6 +67,10 @@ export function getSkillEngine(): SkillEngine | undefined {
   return skillEngine;
 }
 
+export function getMcpClient(): McpClientManager | undefined {
+  return mcpClient;
+}
+
 export function registerParticipant(context: vscode.ExtensionContext): void {
   ensureSkillUsageTable();
   skillEngine = new SkillEngine();
@@ -96,6 +102,21 @@ export function registerParticipant(context: vscode.ExtensionContext): void {
   });
 
   registerLmTools(context, registry, gate);
+
+  mcpClient = new McpClientManager(
+    registry,
+    () => vscode.workspace.workspaceFolders?.[0]?.uri.fsPath,
+    (message) => getLogger().info(message),
+  );
+  mcpClient.discoverConfigs();
+  void mcpClient.connectAll().then(() => {
+    const connected = mcpClient?.list().filter((s) => s.status === "connected") ?? [];
+    if (connected.length > 0) {
+      getLogger().info(
+        `[mcp] ${connected.length} server(s) connected: ${connected.map((s) => `${s.name}(${s.toolCount})`).join(", ")}`,
+      );
+    }
+  });
 
   const participant = vscode.chat.createChatParticipant(PARTICIPANT_ID, handler);
   participant.followupProvider = {
@@ -198,6 +219,11 @@ const handler: vscode.ChatRequestHandler = async (
 
   if (command === "skills") {
     stream.markdown(renderSkills());
+    return { metadata: { mode: "help" } };
+  }
+
+  if (command === "mcp") {
+    stream.markdown(renderMcpStatus());
     return { metadata: { mode: "help" } };
   }
 
@@ -915,6 +941,43 @@ function modeNotice(command: string): string | undefined {
   return undefined;
 }
 
+function renderMcpStatus(): string {
+  if (!mcpClient) return "MCP client not initialized.";
+  const servers = mcpClient.list();
+  if (servers.length === 0) {
+    return [
+      "**No MCP servers configured.**",
+      "",
+      "Add servers to one of:",
+      "- `.vscode/mcp.json` (workspace, VS Code convention)",
+      "- `.mcp.json` (workspace root)",
+      "- `~/.cutad/mcp.json` (global)",
+      "",
+      "Example:",
+      "```json",
+      '{ "servers": { "filesystem": { "command": "npx", "args": ["-y", "@modelcontextprotocol/server-filesystem", "."] } } }',
+      "```",
+      "",
+      "Reload the window after editing. Cutad.AI also exposes its own tools as an MCP server:",
+      "run **Cutad.AI: Start MCP Server** or use `dist/mcp-server.js` from external clients.",
+    ].join("\n");
+  }
+  const icon = (status: string) =>
+    status === "connected" ? "🟢" : status === "error" ? "🔴" : status === "connecting" ? "🟡" : "⚪";
+  return [
+    `**MCP servers** (${servers.length})`,
+    "",
+    "| Status | Name | Tools | Transport | Error |",
+    "|---|---|---|---|---|",
+    ...servers.map(
+      (s) =>
+        `| ${icon(s.status)} ${s.status} | \`${s.name}\` | ${s.toolCount} | ${s.config.type ?? "stdio"} | ${s.error ? s.error.slice(0, 60) : "—"} |`,
+    ),
+    "",
+    "Cutad.AI as an MCP server: **Cutad.AI: Start MCP Server** (external clients can drive VS Code tools through it).",
+  ].join("\n");
+}
+
 function renderSkills(): string {
   if (!skillEngine) return "Skill engine not initialized.";
   const skills = skillEngine.list();
@@ -959,6 +1022,7 @@ function helpMarkdown(model: string, toolCount: number): string {
     "| `/plan list` | ✅ list saved plans |",
     "| `/debug <problem>` | ✅ available — debugger & test investigation |",
     "| `/skills` | ✅ list installed skills |",
+    "| `/mcp` | ✅ MCP server status |",
     "| `/help` | ✅ this message |",
     "",
     `Config: \`${configPath()}\` · Storage: \`~/.cutad/\` (SQLite + sessions + skills)`,

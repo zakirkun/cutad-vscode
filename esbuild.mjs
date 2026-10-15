@@ -10,10 +10,12 @@ const watch = process.argv.includes("--watch");
 const options = {
   entryPoints: [
     { in: "src/extension.ts", out: "extension" },
+    { in: "src/mcp-server.ts", out: "mcp-server" },
     { in: "src/spikes/hostSmoke.ts", out: "host-smoke" },
     { in: "src/spikes/reasoningSpike.ts", out: "reasoning-spike" },
     { in: "src/spikes/langgraphInterruptSpike.ts", out: "langgraph-interrupt-spike" },
     { in: "src/spikes/seedSkills.ts", out: "seed-skills" },
+    { in: "src/spikes/mcpRoundtripSpike.ts", out: "mcp-roundtrip-spike" },
   ],
   outdir: "dist",
   bundle: true,

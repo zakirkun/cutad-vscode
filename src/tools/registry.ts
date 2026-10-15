@@ -19,6 +19,8 @@ export interface RegistryOptions {
   skillEngine?: SkillEngine;
   sessionId?: () => string;
   delegation?: DelegationContext;
+  /** Skip tools that require the VS Code API (for the standalone MCP server). */
+  headless?: boolean;
 }
 
 export function createDefaultRegistry(options: RegistryOptions = {}): ToolRegistry {
@@ -32,17 +34,20 @@ export function createDefaultRegistry(options: RegistryOptions = {}): ToolRegist
   registry.register(writeFileTool);
   registry.register(gitStatusTool);
   registry.register(gitDiffTool);
-  registry.register(getDiagnosticsTool);
-  registry.register(getOpenEditorsTool);
-  registry.register(getSelectionTool);
   registry.register(runCommandTool);
-  registry.register(getDebugStateTool);
-  registry.register(listBreakpointsTool);
-  registry.register(setBreakpointTool);
-  registry.register(removeBreakpointTool);
-  registry.register(launchDebugTool);
   registry.register(runTestsTool);
   registry.register(fetchUrlTool);
+
+  if (!options.headless) {
+    registry.register(getDiagnosticsTool);
+    registry.register(getOpenEditorsTool);
+    registry.register(getSelectionTool);
+    registry.register(getDebugStateTool);
+    registry.register(listBreakpointsTool);
+    registry.register(setBreakpointTool);
+    registry.register(removeBreakpointTool);
+    registry.register(launchDebugTool);
+  }
 
   if (options.skillEngine && options.sessionId) {
     for (const tool of createSkillTools(options.skillEngine, options.sessionId)) {

@@ -3,7 +3,7 @@
   "displayName": "Cutad.AI",
   "description": "AI coding, debugging & planning assistant powered by the CutadAI model gateway. Agent mode with approvals, durable plans, real debugger state, sub-agent specialists, 25 built-in skills, and MCP in both directions.",
   "version": "0.1.0",
-  "publisher": "cutad",
+  "publisher": "codewithzakir",
   "private": true,
   "license": "MIT",
   "icon": "assets/icon.png",

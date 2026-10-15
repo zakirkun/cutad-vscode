@@ -2,10 +2,11 @@ import { describe, it, expect } from "vitest";
 import { loadConfig } from "../../src/config/homeConfig";
 import { generatePlan } from "../../src/agent/plan/generate";
 import { serializePlan, parsePlan } from "../../src/agent/plan/artifact";
+import { hasLiveKey } from "../live";
 
 const config = loadConfig();
 
-describe("plan generation (live gateway, structured output)", () => {
+describe.skipIf(!hasLiveKey())("plan generation (live gateway, structured output)", () => {
   it(
     "generates a valid multi-step plan for a goal",
     async () => {

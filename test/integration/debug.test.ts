@@ -6,6 +6,7 @@ import { loadConfig } from "../../src/config/homeConfig";
 import { runAgent } from "../../src/llm/agentRuntime";
 import { createDefaultRegistry } from "../../src/tools/registry";
 import type { AgentEvent } from "../../src/llm/runtime";
+import { hasLiveKey } from "../live";
 
 const config = loadConfig();
 let workspace: string;
@@ -53,7 +54,7 @@ afterAll(async () => {
   await fs.rm(workspace, { recursive: true, force: true });
 });
 
-describe("debug mode (live gateway, real test failure)", () => {
+describe.skipIf(!hasLiveKey())("debug mode (live gateway, real test failure)", () => {
   it(
     "reproduces the failing test with run_tests, finds the bug, and fixes it",
     async () => {

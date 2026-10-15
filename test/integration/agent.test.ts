@@ -7,6 +7,7 @@ import { runAgent } from "../../src/llm/agentRuntime";
 import { createDefaultRegistry } from "../../src/tools/registry";
 import type { AgentEvent } from "../../src/llm/runtime";
 import type { ToolContext } from "../../src/tools/spec";
+import { hasLiveKey } from "../live";
 
 const config = loadConfig();
 let workspace: string;
@@ -23,7 +24,7 @@ afterAll(async () => {
   await fs.rm(workspace, { recursive: true, force: true });
 });
 
-describe("agent loop (live gateway)", () => {
+describe.skipIf(!hasLiveKey())("agent loop (live gateway)", () => {
   it(
     "reads a file, fixes the bug with apply_patch, and reports",
     async () => {

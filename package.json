@@ -1,11 +1,12 @@
 {
   "name": "cutad-ai",
   "displayName": "Cutad.AI",
-  "description": "AI coding, debugging & planning assistant powered by the CutadAI model gateway.",
-  "version": "0.0.1",
+  "description": "AI coding, debugging & planning assistant powered by the CutadAI model gateway. Agent mode with approvals, durable plans, real debugger state, sub-agent specialists, 25 built-in skills, and MCP in both directions.",
+  "version": "0.1.0",
   "publisher": "cutad",
   "private": true,
   "license": "MIT",
+  "icon": "assets/icon.png",
   "engines": {
     "vscode": "^1.140.0"
   },
@@ -14,6 +15,20 @@
     "Programming Languages",
     "Other"
   ],
+  "keywords": [
+    "ai",
+    "agent",
+    "coding assistant",
+    "mcp",
+    "debugging",
+    "planning",
+    "cutad",
+    "llm"
+  ],
+  "galleryBanner": {
+    "color": "#0f172a",
+    "theme": "dark"
+  },
   "main": "./dist/extension.js",
   "scripts": {
     "build": "node esbuild.mjs",

@@ -1,20 +1,28 @@
 import { describe, it, expect } from "vitest";
-import { loadConfig, configPath } from "../../src/config/homeConfig";
+import { loadConfig, configPath, configDir } from "../../src/config/homeConfig";
 import { listModels, createProvider } from "../../src/llm/gateway";
 import { streamText } from "ai";
+import { hasLiveKey } from "../live";
 
 const config = loadConfig();
 
 describe("home config", () => {
-  it("loads from ~/.cutad/config.json with key and model", () => {
-    expect(configPath()).toContain(".cutad");
-    expect(config.apiKey.startsWith("cag_")).toBe(true);
+  it("loads a config file with baseUrl and model", () => {
+    expect(configPath().endsWith("config.json")).toBe(true);
     expect(config.baseUrl).toBe("https://ai.cutad.web.id/v1");
     expect(config.model.length).toBeGreaterThan(0);
   });
+
+  it("config dir respects CUTAD_CONFIG_DIR override", () => {
+    if (process.env.CUTAD_CONFIG_DIR) {
+      expect(configDir()).toBe(process.env.CUTAD_CONFIG_DIR);
+    } else {
+      expect(configDir()).toContain(".cutad");
+    }
+  });
 });
 
-describe("real gateway", () => {
+describe.skipIf(!hasLiveKey())("real gateway", () => {
   it("lists models including the configured one", async () => {
     const models = await listModels(config);
     expect(models.length).toBeGreaterThan(0);

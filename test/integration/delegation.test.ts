@@ -8,6 +8,7 @@ import { createDefaultRegistry } from "../../src/tools/registry";
 import { createDelegateTool } from "../../src/tools/builtin/delegateTool";
 import type { AgentEvent } from "../../src/llm/runtime";
 import type { ToolRegistry } from "../../src/tools/spec";
+import { hasLiveKey } from "../live";
 
 const config = loadConfig();
 let workspace: string;
@@ -57,7 +58,7 @@ afterAll(async () => {
   await fs.rm(workspace, { recursive: true, force: true });
 });
 
-describe("delegation (live gateway, explorer specialist)", () => {
+describe.skipIf(!hasLiveKey())("delegation (live gateway, explorer specialist)", () => {
   it(
     "parent agent delegates exploration and receives a file-map report",
     async () => {

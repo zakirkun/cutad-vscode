@@ -1,0 +1,126 @@
+{
+  "name": "cutad-ai",
+  "displayName": "Cutad.AI",
+  "description": "AI coding, debugging & planning assistant powered by the CutadAI model gateway.",
+  "version": "0.0.1",
+  "publisher": "cutad",
+  "private": true,
+  "license": "MIT",
+  "engines": {
+    "vscode": "^1.140.0"
+  },
+  "categories": [
+    "AI",
+    "Programming Languages",
+    "Other"
+  ],
+  "main": "./dist/extension.js",
+  "scripts": {
+    "build": "node esbuild.mjs",
+    "watch": "node esbuild.mjs --watch",
+    "check": "tsc --noEmit",
+    "test": "vitest run",
+    "test:watch": "vitest",
+    "lint": "eslint .",
+    "format": "prettier --write \"src/**/*.ts\" \"test/**/*.ts\" \"*.mjs\"",
+    "spike:host": "node dist/host-smoke.js",
+    "vscode:prepublish": "npm run build"
+  },
+  "contributes": {
+    "chatParticipants": [
+      {
+        "id": "cutad.chat",
+        "name": "cutad",
+        "fullName": "Cutad.AI",
+        "description": "AI coding, debugging & planning assistant",
+        "isSticky": true,
+        "commands": [
+          {
+            "name": "ask",
+            "description": "Ask about the codebase (read-only)"
+          },
+          {
+            "name": "agent",
+            "description": "Run a coding task with tools"
+          },
+          {
+            "name": "plan",
+            "description": "Create or execute a step-by-step plan"
+          },
+          {
+            "name": "debug",
+            "description": "Investigate failures with debugger & test state"
+          },
+          {
+            "name": "help",
+            "description": "Show Cutad.AI help"
+          }
+        ]
+      }
+    ],
+    "commands": [
+      {
+        "command": "cutad.setApiKey",
+        "title": "Cutad.AI: Set API Key"
+      },
+      {
+        "command": "cutad.testConnection",
+        "title": "Cutad.AI: Test Connection"
+      },
+      {
+        "command": "cutad.showDiagnostics",
+        "title": "Cutad.AI: Show Diagnostics"
+      },
+      {
+        "command": "cutad.openConfig",
+        "title": "Cutad.AI: Open Config File (~/.cutad/config.json)"
+      }
+    ],
+    "configuration": {
+      "title": "Cutad.AI",
+      "properties": {
+        "cutad.baseUrl": {
+          "type": "string",
+          "default": "https://ai.cutad.web.id/v1",
+          "description": "CutadAI gateway base URL."
+        },
+        "cutad.model": {
+          "type": "string",
+          "default": "",
+          "description": "Default model id (empty = pick from GET /v1/models)."
+        },
+        "cutad.reasoning.show": {
+          "type": "boolean",
+          "default": true,
+          "description": "Show model reasoning/thinking in chat."
+        },
+        "cutad.telemetry.enabled": {
+          "type": "boolean",
+          "default": false,
+          "description": "Opt-in anonymous telemetry (event names only, never code or prompts)."
+        }
+      }
+    }
+  },
+  "dependencies": {
+    "@ai-sdk/openai-compatible": "3.0.69",
+    "@langchain/core": "1.2.17",
+    "@langchain/langgraph": "1.5.0",
+    "@langchain/langgraph-checkpoint": "1.2.0",
+    "@modelcontextprotocol/sdk": "1.32.1",
+    "ai": "7.0.141",
+    "langchain": "1.5.16",
+    "zod": "4.6.7"
+  },
+  "devDependencies": {
+    "@types/node": "24.19.2",
+    "@types/vscode": "1.140.0",
+    "@vscode/test-electron": "3.1.0",
+    "esbuild": "0.28.2",
+    "eslint": "9.39.5",
+    "prettier": "3.9.10",
+    "typescript": "5.9.3",
+    "typescript-eslint": "8.71.2",
+    "vitest": "5.0.4"
+  }
+}

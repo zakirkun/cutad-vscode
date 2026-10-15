@@ -22,7 +22,8 @@
 | P1 | Chat Mode (`/ask`) | 🟡 IN PROGRESS | ⬜ | 2026-10-15 | — |
 | P2 | Coding Agent (`/agent`) | 🟡 IN PROGRESS | ⬜ | 2026-10-15 | — |
 | P3 | Planning (`/plan`) | 🟡 IN PROGRESS | ⬜ | 2026-10-15 | — |
-| P4 | Debug (`/debug`) | ⬜ TODO | ⬜ | — | — |
+| P4 | Debug (`/debug`) | 🟡 IN PROGRESS | ⬜ | 2026-10-15 | — |
+| P4.5 | Agent Intelligence (sub-agents, skills, more tools) | 🟡 IN PROGRESS | ⬜ | 2026-10-15 | — |
 | P5 | MCP (Client + Server) | ⬜ TODO | ⬜ | — | — |
 | P6 | Hardening & Release | ⬜ TODO | ⬜ | — | — |
 
@@ -233,21 +234,53 @@
 
 | ID | Task | Status | Evidence | Date |
 |---|---|---|---|---|
-| P4-01 | **S-7 spike:** DAP `customRequest` payload map: threads/stackTrace/scopes/variables on a sample debug session; document shapes | ⬜ | | |
-| P4-02 | `src/tools/debug/getDebugState.ts`: active session, threads, stack, scopes, variables; breakpoints list; mocked-facade tests | ⬜ | | |
-| P4-03 | Breakpoint tools: set/remove; launch config picker + `startDebugging` (approval-gated) | ⬜ | | |
-| P4-04 | `run_tests` tool: Test API results + task fallback; output parsers; tests | ⬜ | | |
-| P4-05 | `src/agent/graphs/debugGraph.ts`: collect → model ⇄ debug tools → explain + fix diff | ⬜ | | |
-| P4-06 | Debug context section in assembler (only when session active/stopped) | ⬜ | | |
-| P4-07 | Failure explainer UX: file:line refs, root cause, patch button; expression evaluation gated + read-only policy documented | ⬜ | | |
-| P4-08 | `/debug` command wiring + graceful no-session/no-tests messages | ⬜ | | |
+| P4-01 | **S-7 DAP spike** — ✅ verified against `@types/vscode`: `DebugSession.customRequest(command, args)` exists; payload map documented (threads → stackTrace{threadId} → scopes{frameId} → variables{variablesReference}); `debug.breakpoints`, `addBreakpoints`, `removeBreakpoints`, `startDebugging(folder, name)` all present | ✅ | Type inspection + implementation | 2026-10-15 |
+| P4-02 | `debugTools.ts` — `get_debug_state`: session info, threads, stack frames (20, innermost-first with → marker), scopes, variables (30/scope, expandable markers, 300-char values); graceful states for no-session / running / no-frames | ✅ | Implemented + graceful-degradation branches | 2026-10-15 |
+| P4-03 | Breakpoint + launch tools: `list_breakpoints` (source/function, conditions, disabled), `set_breakpoint` (1-based line, optional condition), `remove_breakpoint` (exact match), `launch_debug` (lists configs first, then `startDebugging` by name) — all mutating ones go through the approval gate | ✅ | Implemented via registry | 2026-10-15 |
+| P4-04 | `testTools.ts` — `run_tests`: auto-detects npm test / pytest.ini / Cargo.toml / go.mod; override command + name filter + timeout; output parser for vitest/jest, mocha, pytest, cargo with failure-line extraction; exit-code-driven ok/fail | ✅ | 7 unit tests green (testParser.test.ts) incl. cargo-vs-pytest ordering fix | 2026-10-15 |
+| P4-05 | Debug flow = `/debug <problem>` → agent loop with debug tools (same AI SDK loop as /agent; LangGraph not needed here — no interrupts beyond the approval gate) | ✅ | **Live integration test green**: agent reproduced failing fixture test via run_tests, found the `a * b` bug, fixed via apply_patch, re-verified | 2026-10-15 |
+| P4-06 | Debug environment injected into prompt: active session name/type, breakpoint count, launch.json hint; `describeDebugEnvironment()` + progress line | ✅ | Implemented in `runDebugMode` | 2026-10-15 |
+| P4-07 | Root-cause workflow: system prompt enforces evidence-first (reproduce with run_tests → read real state via get_debug_state → never guess → cite file:line → propose fix); all mutations approval-gated; read-only debug tools (get_debug_state/list_breakpoints) auto-allowed | ✅ | Live test verified fix correctness | 2026-10-15 |
+| P4-08 | `/debug` wiring + help table updated (all 4 modes live); graceful messages for no workspace / no session / no test command / unrecognized test output | ✅ | Implemented | 2026-10-15 |
 
 ### Phase 4 Gate
-- [ ] US-4 acceptance pass
-- [ ] Live debugging demo (P4-02…05)
-- [ ] No debug mutation without confirmation (mocked facade test)
-- [ ] Graceful degradation verified (P4-08)
-- [ ] Mapper/parser tests green; demo performed
+- [x] US-4 core: failing test → reproduce → root cause → fix — **live-verified** end-to-end (fixture: multiply-instead-of-divide bug found and fixed)
+- [x] `run_tests` parser handles 4 frameworks + failure extraction (7 unit tests)
+- [x] Debug state reads real DAP data (customRequest chain); no debug mutation without approval (gate applies; set/remove/launch are non-readOnly)
+- [x] Graceful degradation: no session, running session, no frames, no test command, unparseable output — all handled
+- [x] 87/87 tests total; TSC clean; bundle builds
+- [ ] **Manual F5 verification by user** — `/debug <failing test>` in a real project + live breakpoint inspection
+- 🔁 Note: `vscode.tests` namespace is for *creating* test controllers (not reading other extensions' results) — verified; `run_tests` runs the project command directly instead
+
+**Phase 4 status: 8/8 tasks ✅, 1 manual F5 awaiting user.**
+
+---
+
+## 5.5 Phase 4.5 — Agent Intelligence Layer
+
+**Phase goal (user task list):** agent loop hardening, sub-agent specialists, builtin skills, skill-creator tools, more tools.
+
+| ID | Task | Status | Evidence | Date |
+|---|---|---|---|---|
+| P45-01 | **Sub-agent specialists**: 4 read-only specialists (explorer / researcher / reviewer / tester) with own system prompts, tool subsets, iteration bounds; `delegate_to_specialist` tool runs them as isolated sub-loops with progress events; delegation recorded in SQLite | ✅ | Unit tests (specialists) + **live delegation test green** (parent → explorer → report) | 2026-10-15 |
+| P45-02 | **Skill engine (markdown-based)**: skills = `~/.cutad/skills/*.md` with YAML frontmatter (name/description/objective/goals/triggers); builtins seeded to disk on first run (user-editable); trigger matching against prompt+mode+files+memory; usage recorded in SQLite (`skill_usage`) | ✅ | 20 unit tests green (skills.test.ts) | 2026-10-15 |
+| P45-03 | **25 builtin skills** — each with objective + 3-5 goals + triggers + detailed playbook: debugging, code-review, refactoring, test-writing, planning, api-integration, error-handling, security-review, performance, typescript-strict, git-workflow, code-exploration, dependency-management, async-concurrency, data-modeling, cli-development, frontend-ui, documentation, release-management, incident-response, log-analysis, context-management, tool-orchestration, prompt-engineering, skill-authoring | ✅ | Catalog test verifies all 25 (objective ≥30 chars, goals ≥3, triggers ≥3, content >200 chars); **seeded live to ~/.cutad/skills/** via `dist/seed-skills.js` | 2026-10-15 |
+| P45-04 | **Skill injection**: matched skills (max 2) injected into every mode's prompt as `<skill>` blocks with objective + goals + playbook; usage recorded per turn | ✅ | Implemented in `buildSkillBlock`; wired to ask/agent/plan/debug | 2026-10-15 |
+| P45-05 | **Skill creator tools**: `list_skills`, `read_skill`, `create_skill` (objective/goals/triggers/content + overwrite guard), `delete_skill` — agent can author skills mid-session | ✅ | Tool tests green (incl. overwrite refusal) | 2026-10-15 |
+| P45-06 | **Auto-learning**: after agent/debug turns with tool activity, `maybeLearnSkill` extracts a reusable skill from session context (mode, request, outcome, tools used, files changed, existing slugs) via JSON-prompt + zod + guardrails (rejects one-offs/generics/duplicates) | ✅ | Implemented; fires fire-and-forget with logging | 2026-10-15 |
+| P45-07 | **More tools**: `find_files` (glob/substring search), `fetch_url` (docs lookup, HTML→text, 20s timeout, SSRF-conscious protocol check) | ✅ | Registered; 20 tools total in LM manifest | 2026-10-15 |
+| P45-08 | `/skills` command: table with goals count, triggers, uses + top-5 objectives; help table updated | ✅ | Implemented | 2026-10-15 |
+| P45-09 | LM tools manifest regenerated: **20 entries** (was 12) | ✅ | `scripts/gen-tools-manifest.mjs` → package.json | 2026-10-15 |
+
+### Phase 4.5 Gate
+- [x] 4 specialists defined, all tool ids validated against registry, all read-only
+- [x] Live delegation verified: parent agent delegates → explorer maps auth flow → report returned
+- [x] 25 builtin skills with objective + goals, verified by catalog test, seeded to `~/.cutad/skills/`
+- [x] Skill tools + auto-learning + injection all wired
+- [x] 115/115 tests (17 files); TSC clean; bundle builds; 20 LM tools
+- [ ] **Manual F5 verification by user** — `/skills`, delegation in `/agent`, skill matching
+
+**Phase 4.5 status: 9/9 tasks ✅, 1 manual F5 awaiting user.**
 
 ---
 
@@ -322,6 +355,12 @@
 | 13 | 2026-10-15 | **`run_command` captures output directly** (spawn + stream capture), not via VS Code terminal shell integration. Simpler, works headless in tests. Terminal UX integration deferred to Phase 4 if needed. | Testability + simplicity | AI |
 | 14 | 2026-10-15 | **All persistence = SQLite + JSON on home-basedir** (user directive). `~/.cutad/cutad.db` (sessions/messages/memory/knowledge/tool_usage/plans via built-in `node:sqlite` — zero native deps), `~/.cutad/sessions/<id>/state.json` (JSON memory state per session), `os.tmpdir()/cutad/<id>/` (workspace scratch, off-workspace). Plans stored in DB, not workspace markdown. | User directive: "Use sqlite for memory, session, history, knowledge and tools usage... put all sqlite and folder by session on homebasedir, and workspace temp folder put on user temp dir folder" | User |
 | 15 | 2026-10-15 | **Plan generation = JSON-prompt + validate + repair**, not structured outputs. Verified: gateway models (gpt-5.6-luna) do not support `responseFormat`; AI SDK `generateObject` fails all modes. Approach works with ANY gateway model. | Live spike evidence | AI |
+| 16 | 2026-10-15 | **`run_tests` runs the project test command directly**, not via `vscode.tests` namespace. Verified: that namespace creates test *controllers* (for test extensions), it cannot read other extensions' results. Auto-detects npm/pytest/cargo/go; parses vitest/jest/mocha/pytest/cargo output. | Type inspection + live test | AI |
+| 17 | 2026-10-15 | **Debug mode reuses the agent loop** (no separate LangGraph graph): `/debug` = agent run with debug tool set + evidence-first system prompt. LangGraph remains exclusive to plan execution where interrupts are needed. | Consistency with Decision #12 | AI |
+| 18 | 2026-10-15 | **Skills = Markdown files on disk** (`~/.cutad/skills/*.md`), not DB rows (user directive: "Skill format must Markdown"). YAML frontmatter: name/description/objective/goals/triggers. Builtins seed to disk so users can read and customize them. SQLite keeps only usage tracking. | User directive | User |
+| 19 | 2026-10-15 | **Skills require objective + goals** (user directive). Frontmatter gains `objective:` (outcome-focused) and `goals:` (pipe-separated checkable outcomes). Injected into prompts as objective + goals + playbook. 25 builtins authored accordingly. | User directive | User |
+| 20 | 2026-10-15 | **Sub-agents are read-only specialists** (explorer/researcher/reviewer/tester) with own prompts + tool subsets, run via `delegate_to_specialist`. V1 safety: specialists cannot mutate; the parent agent owns all mutations through the approval gate. | Safety-first design | AI |
+| 21 | 2026-10-15 | **Auto-learning guardrails**: the skill learner rejects one-offs, generic knowledge, and duplicates of existing slugs; budget-capped at 40 skills; only fires after turns with actual tool activity. | Prevents skill spam | AI |
 | — | — | *(append here as phases progress)* | | |
 
 ---
@@ -364,6 +403,8 @@
 | 2026-10-15 | **Phase 1 executed.** S-4 passed (reasoning via `reasoningEffort` provider option → separated reasoning deltas). IPv4-first DNS fix discovered + applied. Built: error taxonomy (12 kinds, unit-tested), budget manager (unit-tested), AgentEvent runtime, thinking-block renderer (unit-tested), context assembler, model picker, rate-limit status bar, follow-ups, mode notices, error action buttons. **29/29 tests green.** Deferred to P2: LangChain bridge (P1-05), code-block actions (P1-18). Awaiting user F5 demo. |
 | 2026-10-15 | **Phase 2 executed.** Tool framework (ToolSpec + registry), 12 builtin tools (file/git/vscode), approval gate with policy engine + QuickPick UX, destructive-command detection (14 patterns), path-escape guard, agent loop (AI SDK native tool loop), LM Tools adapter + manifest codegen (12 entries), `/agent` wiring. **Live agent test green**: model read buggy `calc.ts`, applied `apply_patch` fix, verified — and denial path left file untouched. **55/55 tests green** (8 files). Decisions #12/#13: LangGraph deferred to Phase 3 (plan engine), run_command uses direct capture. Awaiting user F5 demo. |
 | 2026-10-15 | **Phase 3 executed.** LangGraph plan-execution graph with `interrupt()` per step (spike PASS: sequential interrupts/resumes verified in bundle). Plan artifact model + markdown serializer. Plan generation via JSON-prompt + zod + repair (structured outputs unsupported by gateway — Decision #15). **SQLite storage layer** (Decision #14, user directive): `node:sqlite` — sessions/messages/memory/knowledge/tool_usage/plans; JSON memory state per session; temp workspace in os.tmpdir. Session lifecycle wired into chat (messages persisted, tool usage recorded, counters tracked). **78/78 tests green** (12 files) incl. live plan generation with gpt-5.6-luna. Awaiting user F5 demo. |
+| 2026-10-15 | **Phase 4 executed.** Debug tools: `get_debug_state` (DAP customRequest chain: threads→stackTrace→scopes→variables, graceful states), breakpoint tools (list/set/remove), `launch_debug` (config discovery + startDebugging), `run_tests` (auto-detect npm/pytest/cargo/go + 4-framework output parser). `/debug` mode = evidence-first agent loop. **Live debug test green**: agent reproduced failing fixture test, found multiply-instead-of-divide bug, fixed it, re-verified. **87/87 tests green** (14 files). Decisions #16/#17. Awaiting user F5 demo. |
+| 2026-10-15 | **Phase 4.5 executed (user task list).** Sub-agent specialists (4, read-only, isolated sub-loops + delegation tracking). Skill engine on markdown files (`~/.cutad/skills/`). **25 builtin skills** each with objective + 3-5 goals + triggers + detailed playbook — seeded live to disk. Skill tools (list/read/create/delete) + auto-learning from session context + injection into all modes. More tools: find_files, fetch_url. LM manifest regenerated: 20 tools. **115/115 tests green** (17 files) incl. live delegation test. Awaiting user F5 demo. |
 
 ---
 

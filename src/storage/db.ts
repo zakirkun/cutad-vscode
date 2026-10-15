@@ -118,6 +118,17 @@ function migrate(database: DatabaseSync): void {
       updated_at TEXT NOT NULL,
       PRIMARY KEY (session_id, slug)
     );
+
+    CREATE TABLE IF NOT EXISTS delegations (
+      id INTEGER PRIMARY KEY AUTOINCREMENT,
+      session_id TEXT NOT NULL REFERENCES sessions(id) ON DELETE CASCADE,
+      specialist TEXT NOT NULL,
+      task TEXT NOT NULL,
+      ok INTEGER NOT NULL DEFAULT 1,
+      summary TEXT NOT NULL DEFAULT '',
+      created_at TEXT NOT NULL
+    );
+    CREATE INDEX IF NOT EXISTS idx_delegations_session ON delegations(session_id, id);
   `);
 }
 

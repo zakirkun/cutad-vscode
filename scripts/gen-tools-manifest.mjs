@@ -5,7 +5,7 @@ import { fileURLToPath } from "node:url";
 
 const root = path.dirname(path.dirname(fileURLToPath(import.meta.url)));
 const stubPath = path.join(root, "scripts", "vscode-stub.mjs");
-const outfile = path.join(root, "scripts", ".tools-manifest.mjs");
+const outfile = path.join(root, "scripts", ".tools-manifest.cjs");
 
 await esbuild.build({
   stdin: {
@@ -34,9 +34,9 @@ await esbuild.build({
     loader: "ts",
   },
   bundle: true,
-  format: "esm",
+  format: "cjs",
   platform: "node",
-  outfile,
+  outfile: outfile.replace(/\.mjs$/, ".cjs"),
   alias: { vscode: stubPath },
   logLevel: "warning",
 });

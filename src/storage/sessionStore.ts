@@ -189,6 +189,30 @@ export class SessionStore {
     return rows.map(rowToKnowledge);
   }
 
+  recordDelegation(specialist: string, task: string, ok: boolean, summary: string): void {
+    getDb()
+      .prepare(
+        `INSERT INTO delegations (session_id, specialist, task, ok, summary, created_at)
+         VALUES (?, ?, ?, ?, ?, ?)`,
+      )
+      .run(this.sessionId, specialist, task, ok ? 1 : 0, summary, nowIso());
+    this.touch();
+  }
+
+  delegationStats(): Array<{ specialist: string; count: number; failed: number }> {
+    const rows = getDb()
+      .prepare(
+        `SELECT specialist, COUNT(*) AS count, SUM(CASE WHEN ok = 0 THEN 1 ELSE 0 END) AS failed
+         FROM delegations WHERE session_id = ? GROUP BY specialist ORDER BY count DESC`,
+      )
+      .all(this.sessionId) as Array<Record<string, unknown>>;
+    return rows.map((r) => ({
+      specialist: String(r.specialist),
+      count: Number(r.count),
+      failed: Number(r.failed ?? 0),
+    }));
+  }
+
   savePlan(slug: string, title: string, goal: string, status: string, artifactJson: string): void {
     const now = nowIso();
     getDb()

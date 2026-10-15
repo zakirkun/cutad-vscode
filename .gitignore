@@ -5,3 +5,4 @@ dist/
 coverage/
 *.log
 .omo/
+scripts/.tools-manifest.cjs

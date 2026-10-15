@@ -53,6 +53,10 @@
             "description": "Investigate failures with debugger & test state"
           },
           {
+            "name": "skills",
+            "description": "List installed skills"
+          },
+          {
             "name": "help",
             "description": "Show Cutad.AI help"
           }
@@ -225,6 +229,37 @@
           },
           "required": [
             "query"
+          ],
+          "additionalProperties": false
+        }
+      },
+      {
+        "name": "cutad_find_files",
+        "tags": [
+          "cutad"
+        ],
+        "toolReferenceName": "find_files",
+        "displayName": "Find Files",
+        "modelDescription": "Find files by name pattern (substring or glob-like, e.g. '*.test.ts', 'config'). Returns workspace-relative paths. Faster than search_text when you only need paths.",
+        "userDescription": "Find files by name",
+        "canBeReferencedInPrompt": true,
+        "icon": "$(sparkle)",
+        "inputSchema": {
+          "type": "object",
+          "properties": {
+            "pattern": {
+              "type": "string",
+              "description": "Name pattern: substring or glob with * (e.g. '*.test.ts')"
+            },
+            "maxResults": {
+              "description": "Max results (default 100)",
+              "type": "integer",
+              "minimum": 1,
+              "maximum": 500
+            }
+          },
+          "required": [
+            "pattern"
           ],
           "additionalProperties": false
         }
@@ -432,6 +467,212 @@
           },
           "required": [
             "command"
+          ],
+          "additionalProperties": false
+        }
+      },
+      {
+        "name": "cutad_get_debug_state",
+        "tags": [
+          "cutad"
+        ],
+        "toolReferenceName": "get_debug_state",
+        "displayName": "Get Debug State",
+        "modelDescription": "Read the current debugger state: active session, paused threads, stack frames, scopes, and variables. Use when the debugger is stopped at a breakpoint to understand why. Returns empty-state message when no session is active or running.",
+        "userDescription": "Read the debugger state (stack, variables)",
+        "canBeReferencedInPrompt": true,
+        "icon": "$(sparkle)",
+        "inputSchema": {
+          "type": "object",
+          "properties": {
+            "threadId": {
+              "description": "DAP thread id (default: first thread)",
+              "type": "integer",
+              "minimum": -9007199254740991,
+              "maximum": 9007199254740991
+            },
+            "frameIndex": {
+              "description": "Stack frame index (default: 0 = innermost)",
+              "type": "integer",
+              "minimum": 0,
+              "maximum": 9007199254740991
+            },
+            "maxVariables": {
+              "description": "Max variables per scope (default 30)",
+              "type": "integer",
+              "minimum": 1,
+              "maximum": 100
+            }
+          },
+          "additionalProperties": false
+        }
+      },
+      {
+        "name": "cutad_list_breakpoints",
+        "tags": [
+          "cutad"
+        ],
+        "toolReferenceName": "list_breakpoints",
+        "displayName": "List Breakpoints",
+        "modelDescription": "List all currently set breakpoints with file and line.",
+        "userDescription": "List breakpoints",
+        "canBeReferencedInPrompt": true,
+        "icon": "$(sparkle)",
+        "inputSchema": {
+          "type": "object",
+          "properties": {},
+          "additionalProperties": false
+        }
+      },
+      {
+        "name": "cutad_set_breakpoint",
+        "tags": [
+          "cutad"
+        ],
+        "toolReferenceName": "set_breakpoint",
+        "displayName": "Set Breakpoint",
+        "modelDescription": "Set a breakpoint at a file and line (1-based). Optionally with a condition expression.",
+        "userDescription": "Set a breakpoint",
+        "canBeReferencedInPrompt": true,
+        "icon": "$(sparkle)",
+        "inputSchema": {
+          "type": "object",
+          "properties": {
+            "path": {
+              "type": "string",
+              "description": "Workspace-relative file path"
+            },
+            "line": {
+              "type": "integer",
+              "exclusiveMinimum": 0,
+              "maximum": 9007199254740991,
+              "description": "Line number (1-based)"
+            },
+            "condition": {
+              "description": "Conditional expression, e.g. 'userId === null'",
+              "type": "string"
+            }
+          },
+          "required": [
+            "path",
+            "line"
+          ],
+          "additionalProperties": false
+        }
+      },
+      {
+        "name": "cutad_remove_breakpoint",
+        "tags": [
+          "cutad"
+        ],
+        "toolReferenceName": "remove_breakpoint",
+        "displayName": "Remove Breakpoint",
+        "modelDescription": "Remove the breakpoint at a file and line (1-based).",
+        "userDescription": "Remove a breakpoint",
+        "canBeReferencedInPrompt": true,
+        "icon": "$(sparkle)",
+        "inputSchema": {
+          "type": "object",
+          "properties": {
+            "path": {
+              "type": "string",
+              "description": "Workspace-relative file path"
+            },
+            "line": {
+              "type": "integer",
+              "exclusiveMinimum": 0,
+              "maximum": 9007199254740991,
+              "description": "Line number (1-based)"
+            }
+          },
+          "required": [
+            "path",
+            "line"
+          ],
+          "additionalProperties": false
+        }
+      },
+      {
+        "name": "cutad_launch_debug",
+        "tags": [
+          "cutad"
+        ],
+        "toolReferenceName": "launch_debug",
+        "displayName": "Launch Debug Session",
+        "modelDescription": "Start a debug session from a launch configuration. Use with no argument to list available configurations first.",
+        "userDescription": "Start a debug session",
+        "canBeReferencedInPrompt": true,
+        "icon": "$(sparkle)",
+        "inputSchema": {
+          "type": "object",
+          "properties": {
+            "configuration": {
+              "description": "Launch configuration name from launch.json",
+              "type": "string"
+            }
+          },
+          "additionalProperties": false
+        }
+      },
+      {
+        "name": "cutad_run_tests",
+        "tags": [
+          "cutad"
+        ],
+        "toolReferenceName": "run_tests",
+        "displayName": "Run Tests",
+        "modelDescription": "Run the project's test command (auto-detected from package.json or overridable) and return a parsed summary with failure details. Use to verify changes or reproduce reported failures.",
+        "userDescription": "Run the project test suite",
+        "canBeReferencedInPrompt": true,
+        "icon": "$(sparkle)",
+        "inputSchema": {
+          "type": "object",
+          "properties": {
+            "command": {
+              "description": "Override test command (default: auto-detect npm test / pytest / cargo test)",
+              "type": "string"
+            },
+            "filter": {
+              "description": "Test name filter (passed to the runner when supported)",
+              "type": "string"
+            },
+            "timeoutSeconds": {
+              "description": "Timeout (default 300)",
+              "type": "integer",
+              "minimum": 10,
+              "maximum": 600
+            }
+          },
+          "additionalProperties": false
+        }
+      },
+      {
+        "name": "cutad_fetch_url",
+        "tags": [
+          "cutad"
+        ],
+        "toolReferenceName": "fetch_url",
+        "displayName": "Fetch URL",
+        "modelDescription": "Fetch a URL (documentation, API reference, changelog) and return its text content, stripped of HTML. Use for looking up external documentation when the installed sources are not enough.",
+        "userDescription": "Fetch a web page (documentation lookup)",
+        "canBeReferencedInPrompt": true,
+        "icon": "$(sparkle)",
+        "inputSchema": {
+          "type": "object",
+          "properties": {
+            "url": {
+              "type": "string",
+              "description": "HTTP(S) URL to fetch"
+            },
+            "maxChars": {
+              "description": "Max characters (default 30000)",
+              "type": "integer",
+              "minimum": 1000,
+              "maximum": 100000
+            }
+          },
+          "required": [
+            "url"
           ],
           "additionalProperties": false
         }

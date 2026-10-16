@@ -1,5 +1,8 @@
 # Cutad.AI — AI Coding, Debugging & Planning for VS Code
 
+[![Visual Studio Marketplace](https://img.shields.io/badge/VS%20Marketplace-Cutad.AI-blue)](https://marketplace.visualstudio.com/items?itemName=codewithzakir.cutad-ai)
+[![License: MIT](https://img.shields.io/badge/License-MIT-green.svg)](LICENSE)
+
 An AI assistant that codes, debugs, and plans inside VS Code — powered by the [CutadAI model gateway](https://ai.cutad.web.id/docs), with agent orchestration, sub-agent specialists, 25 built-in skills, and MCP in both directions.
 
 ```
@@ -13,7 +16,7 @@ An AI assistant that codes, debugs, and plans inside VS Code — powered by the 
 
 ## Quick start
 
-1. **Install** the extension (VSIX or Marketplace).
+1. **Install** from the [VS Marketplace](https://marketplace.visualstudio.com/items?itemName=codewithzakir.cutad-ai) — or via CLI: `code --install-extension codewithzakir.cutad-ai`
 2. **Set your API key** — command palette → **Cutad.AI: Set API Key** (or edit `~/.cutad/config.json`).
 3. **Chat** — open the Chat view (`Ctrl+Alt+I`) and type `@cutad hello`.
 

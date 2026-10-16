@@ -12,7 +12,7 @@ export const DEFAULT_CONFIG = {
   model: "workbuddy/deepseek-v4.1-flash",
   maxOutputTokens: 8192,
   reasoning: { show: true, effort: "high" as string },
-  agent: { maxIterations: 25, autoApprove: [] as string[] },
+  agent: { maxIterations: 25, autoApprove: [] as string[], learnSkills: true },
   tools: { truncateKB: 64 },
   telemetry: { enabled: false },
 };
@@ -29,6 +29,7 @@ export const ConfigSchema = z.object({
   agent: z.object({
     maxIterations: z.number().int().positive(),
     autoApprove: z.array(z.string()),
+    learnSkills: z.boolean().default(true),
   }),
   tools: z.object({ truncateKB: z.number().int().positive() }),
   telemetry: z.object({ enabled: z.boolean() }),

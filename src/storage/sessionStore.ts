@@ -62,6 +62,20 @@ export class SessionStore {
     return store;
   }
 
+  static latestForWorkspace(workspace: string, maxAgeMs = 12 * 60 * 60 * 1000): SessionStore | undefined {
+    const row = getDb()
+      .prepare(
+        `SELECT id, updated_at FROM sessions
+         WHERE workspace = ? AND status = 'active'
+         ORDER BY updated_at DESC LIMIT 1`,
+      )
+      .get(workspace) as { id: string; updated_at: string } | undefined;
+    if (!row) return undefined;
+    const age = Date.now() - Date.parse(row.updated_at);
+    if (!Number.isFinite(age) || age > maxAgeMs) return undefined;
+    return new SessionStore(row.id);
+  }
+
   ensure(workspace: string, model: string, title = ""): void {
     const db = getDb();
     const now = nowIso();

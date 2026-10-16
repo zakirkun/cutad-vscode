@@ -50,6 +50,21 @@ export class ToolRegistry {
     return this.tools.get(id);
   }
 
+  unregister(id: string): boolean {
+    return this.tools.delete(id);
+  }
+
+  unregisterWhere(predicate: (id: string) => boolean): number {
+    let removed = 0;
+    for (const id of [...this.tools.keys()]) {
+      if (predicate(id)) {
+        this.tools.delete(id);
+        removed++;
+      }
+    }
+    return removed;
+  }
+
   all(): ToolSpec<never>[] {
     return [...this.tools.values()];
   }

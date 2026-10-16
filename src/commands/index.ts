@@ -1,5 +1,4 @@
 import * as vscode from "vscode";
-import * as fs from "node:fs/promises";
 import * as path from "node:path";
 import { ensureConfigFile, configPath, loadConfig, saveConfig } from "../config/homeConfig";
 import { listModels } from "../llm/gateway";
@@ -192,27 +191,37 @@ export function registerCommands(context: vscode.ExtensionContext): void {
 
   context.subscriptions.push(
     vscode.commands.registerCommand("cutad.openPlan", async () => {
-      const workspaceRoot = vscode.workspace.workspaceFolders?.[0]?.uri.fsPath;
-      if (!workspaceRoot) {
-        void vscode.window.showWarningMessage("Cutad.AI: no workspace folder open.");
+      const { getActiveSession } = await import("../chat/participant");
+      const session = getActiveSession();
+      if (!session) {
+        void vscode.window.showWarningMessage("Cutad.AI: no active session — send a message first.");
         return;
       }
-      const base = path.resolve(workspaceRoot, ".cutad", "plans");
-      let files: string[];
-      try {
-        files = (await fs.readdir(base)).filter((f) => f.endsWith(".md"));
-      } catch {
-        void vscode.window.showWarningMessage("Cutad.AI: no plans found in .cutad/plans.");
+      const plans = session.store.listPlans();
+      if (plans.length === 0) {
+        void vscode.window.showWarningMessage(
+          "Cutad.AI: no plans in this session yet. Create one with `@cutad /plan <goal>`.",
+        );
         return;
       }
-      if (files.length === 0) {
-        void vscode.window.showWarningMessage("Cutad.AI: no plans found in .cutad/plans.");
-        return;
-      }
-      const picked = await vscode.window.showQuickPick(files, { title: "Cutad.AI — Open Plan" });
+      const picked = await vscode.window.showQuickPick(
+        plans.map((p) => ({
+          label: p.title || p.slug,
+          description: `${p.status} · ${p.slug}`,
+          detail: p.goal.slice(0, 120),
+          slug: p.slug,
+        })),
+        { title: "Cutad.AI — Open Plan (from session database)" },
+      );
       if (!picked) return;
-      const doc = await vscode.workspace.openTextDocument(path.join(base, picked));
+      const doc = await vscode.workspace.openTextDocument({
+        content: picked.detail ? `# ${picked.label}\n\n${picked.detail}` : picked.label,
+        language: "markdown",
+      });
       await vscode.window.showTextDocument(doc);
+      void vscode.commands.executeCommand("workbench.action.chat.open", {
+        query: `@cutad /plan execute ${picked.slug}`,
+      });
     }),
   );
 }

@@ -1,5 +1,5 @@
 import * as vscode from "vscode";
-import { decidePolicy, SessionApprovals, isDestructiveRequest, type ApprovalPolicy } from "./approvalPolicy";
+import { decidePolicy, SessionApprovals, isDestructiveRequest, formatApprovalDetail, type ApprovalPolicy } from "./approvalPolicy";
 import type { ApprovalDecision, ApprovalRequest, ToolSpec } from "./spec";
 
 export class ApprovalGate {
@@ -37,7 +37,7 @@ export class ApprovalGate {
 
     const picked = await vscode.window.showQuickPick(items, {
       title,
-      placeHolder: request.summary,
+      placeHolder: formatApprovalDetail(request).slice(0, 200),
       ignoreFocusOut: true,
     });
 

@@ -2,6 +2,7 @@ import { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
 import { StdioServerTransport } from "@modelcontextprotocol/sdk/server/stdio.js";
 import { z } from "zod";
 import type { ToolRegistry, ToolSpec, ToolContext } from "../spec";
+import { jsonSchemaToZodObject, type JsonSchemaShape } from "../schemaBridge";
 
 export interface McpServerOptions {
   registry: ToolRegistry;
@@ -30,17 +31,11 @@ export function createMcpServer(options: McpServerOptions): McpServer {
 }
 
 function registerToolOnServer(server: McpServer, spec: ToolSpec<never>, options: McpServerOptions): void {
-  const jsonSchema = z.toJSONSchema(spec.schema as z.ZodType) as {
-    type?: string;
-    properties?: Record<string, unknown>;
-    required?: string[];
-  };
-  const required = new Set(jsonSchema.required ?? []);
+  const jsonSchema = z.toJSONSchema(spec.schema as z.ZodType) as JsonSchemaShape;
+  const objectSchema = jsonSchemaToZodObject(jsonSchema);
   const rawShape: Record<string, unknown> = {};
-  if (jsonSchema.properties) {
-    for (const [key, value] of Object.entries(jsonSchema.properties)) {
-      rawShape[key] = jsonSchemaToZod(value as Record<string, unknown>, required.has(key));
-    }
+  for (const [key, value] of Object.entries(objectSchema.shape)) {
+    rawShape[key] = value;
   }
 
   server.registerTool(
@@ -110,35 +105,6 @@ function summarize(input: Record<string, unknown>): string {
   if (typeof input.command === "string") return String(input.command).slice(0, 120);
   if (typeof input.query === "string") return `"${input.query}"`;
   return JSON.stringify(input).slice(0, 120);
-}
-
-function jsonSchemaToZod(schema: Record<string, unknown>, isRequired: boolean): z.ZodTypeAny {
-  const description = typeof schema.description === "string" ? schema.description : undefined;
-  const type = schema.type as string | undefined;
-
-  let zodType: z.ZodTypeAny;
-  switch (type) {
-    case "number":
-    case "integer":
-      zodType = type === "integer" ? z.number().int() : z.number();
-      break;
-    case "boolean":
-      zodType = z.boolean();
-      break;
-    case "array": {
-      const items = schema.items as Record<string, unknown> | undefined;
-      zodType = z.array(items ? jsonSchemaToZod(items, true) : z.unknown());
-      break;
-    }
-    case "object":
-      zodType = z.record(z.string(), z.unknown());
-      break;
-    default:
-      zodType = z.string();
-  }
-
-  const withDescription = description ? zodType.describe(description) : zodType;
-  return isRequired ? withDescription : withDescription.optional();
 }
 
 export async function serveStdio(server: McpServer): Promise<void> {

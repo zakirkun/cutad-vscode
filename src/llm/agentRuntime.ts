@@ -24,6 +24,7 @@ export interface AgentRunResult {
   toolCalls: number;
   filesChanged: string[];
   denied: number;
+  textLength: number;
 }
 
 export async function runAgent(options: AgentRunOptions): Promise<AgentRunResult> {
@@ -33,6 +34,7 @@ export async function runAgent(options: AgentRunOptions): Promise<AgentRunResult
   const filesChanged = new Set<string>();
   let toolCalls = 0;
   let denied = 0;
+  let textLength = 0;
 
   const maxSteps = options.maxIterations ?? config.agent.maxIterations;
 
@@ -53,6 +55,7 @@ export async function runAgent(options: AgentRunOptions): Promise<AgentRunResult
     for await (const part of result.stream) {
       switch (part.type) {
         case "text-delta":
+          textLength += part.text.length;
           onEvent({ type: "text-delta", text: part.text });
           break;
         case "reasoning-delta":
@@ -98,7 +101,7 @@ export async function runAgent(options: AgentRunOptions): Promise<AgentRunResult
         }
         case "error":
           onEvent({ type: "error", error: mapGatewayError(part.error) });
-          return { toolCalls, filesChanged: [...filesChanged], denied };
+          return { toolCalls, filesChanged: [...filesChanged], denied, textLength };
         default:
           break;
       }
@@ -115,12 +118,12 @@ export async function runAgent(options: AgentRunOptions): Promise<AgentRunResult
   } catch (err) {
     if (options.signal.aborted) {
       onEvent({ type: "done", finishReason: "canceled" });
-      return { toolCalls, filesChanged: [...filesChanged], denied };
+      return { toolCalls, filesChanged: [...filesChanged], denied, textLength };
     }
     onEvent({ type: "error", error: mapGatewayError(err) });
   }
 
-  return { toolCalls, filesChanged: [...filesChanged], denied };
+  return { toolCalls, filesChanged: [...filesChanged], denied, textLength };
 }
 
 const AGENT_SYSTEM_PROMPT = [

@@ -22,6 +22,11 @@ export interface RunAskOptions {
   onEvent: (event: AgentEvent) => void;
 }
 
+export function normalizeResetToMs(value: number): number {
+  if (!Number.isFinite(value) || value <= 0) return 0;
+  return value < 1e12 ? value * 1000 : value;
+}
+
 export async function runAsk(options: RunAskOptions): Promise<void> {
   const { config, onEvent } = options;
   const provider = createProvider(config);
@@ -45,7 +50,7 @@ export async function runAsk(options: RunAskOptions): Promise<void> {
         onEvent({
           type: "rate-limit",
           remaining: remaining !== undefined ? Number(remaining) : undefined,
-          resetAtMs: reset !== undefined ? Number(reset) : undefined,
+          resetAtMs: reset !== undefined ? normalizeResetToMs(Number(reset)) : undefined,
         });
       }
     })

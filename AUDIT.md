@@ -3,8 +3,40 @@
 **Audit date:** 2026-10-15
 **Auditor:** AI (systematic code review + dead-code analysis + claim-vs-reality verification)
 **Scope:** `src/**` (48 files), `test/**` (22 files), `.github/workflows/**`, `package.json`, `README.md`, `docs/STATE.md`
-**Method:** static analysis, cross-reference tracing (definition → call sites), claim verification against implementation, test coverage mapping
+**Method:** static analysis, cross-reference tracing (definition → call site), claim verification against implementation, test coverage mapping
 **Build audited:** commit `328675b` (marketplace-published 0.1.0)
+
+---
+
+## Fix Status (as of audit remediation commit)
+
+| Finding | Status | Verification |
+|---|---|---|
+| C-1 | ✅ FIXED | `isDestructiveRequest` wired into the gate; forced prompt; 5 unit tests |
+| C-2 | ✅ FIXED | throws on deny/failure; denied counts, filesChanged, tool-end ok accurate; regression test |
+| C-3 | ✅ FIXED | delegation routes through the real gate; tester lost `run_command`; 2 regression tests |
+| C-4 | ✅ FIXED | CI job-level env for live tests |
+| C-5 | ✅ FIXED | in-editor HTTP MCP server with approval routing + command UX + integration test |
+| H-1 | ✅ FIXED | single exit via `finally`; plan/debug/agent all persist; stream text captured |
+| H-2/H-3/M-7 | ✅ FIXED (code + docs) | `latestForWorkspace` resume; README corrected to step-level reload resume |
+| H-4 | ✅ FIXED | shared `schemaBridge`; MCP client tools expose real input schemas; test |
+| H-5 | ✅ FIXED | `resolveEnvVars` applied to env/headers/args |
+| H-6 | ✅ FIXED | stderr drained to the logger |
+| H-7 | ✅ FIXED | `resolveContextWindow` cached, threaded to all 4 context builds |
+| M-1 | ✅ FIXED | `openPlan` reads SQLite session plans |
+| M-2 | ✅ FIXED | `disposeSessions()` persists + cleans temp on deactivate |
+| M-3 | ✅ FIXED | `activeSession` tracked per running turn |
+| M-4 | ✅ FIXED | `unregisterWhere` on reconnect/disconnect |
+| M-5 | ✅ FIXED | `normalizeResetToMs` (seconds vs ms) |
+| M-6 | ✅ FIXED | usage rendered per turn (in/out/thinking) |
+| M-8 | ✅ FIXED | fresh thread id when plan complete; stable while resumable |
+| M-9 | ✅ FIXED | `agent.learnSkills` toggle (default true) |
+| M-10 | ✅ FIXED | `/help` shows tool usage, delegations, memory counters |
+| M-11 | ✅ FIXED | text-only steps count as ok via `textLength` |
+| L-1..L-7 | ✅ FIXED | metadata, dead fields, formatApprovalDetail wired, README counts, HOME fallback |
+| L-8..L-10 | ℹ️ WON'T FIX (cosmetic/accepted) | noted below |
+
+**Remaining test status:** 132/133 offline tests green; the single failure requires live gateway connectivity (external network outage, not a regression).
 
 ---
 

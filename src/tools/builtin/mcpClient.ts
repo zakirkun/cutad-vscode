@@ -1,9 +1,10 @@
 import * as vscode from "vscode";
 import * as fs from "node:fs";
 import * as path from "node:path";
-import { z } from "zod";
 import { ok, fail, type ToolSpec, type ToolRegistry } from "../spec";
 import { truncateText } from "../../context/budget";
+import { jsonSchemaToZodObject, type JsonSchemaShape } from "../schemaBridge";
+import { configDir } from "../../config/homeConfig";
 
 export interface McpServerConfig {
   type?: "stdio" | "http" | "sse";
@@ -77,17 +78,24 @@ export class McpClientManager {
           "@modelcontextprotocol/sdk/client/streamableHttp.js"
         );
         transport = new StreamableHTTPClientTransport(new URL(state.config.url!), {
-          requestInit: { headers: state.config.headers },
+          requestInit: { headers: resolveEnvMap(state.config.headers) },
         } as never);
       } else {
         const { StdioClientTransport } = await import("@modelcontextprotocol/sdk/client/stdio.js");
-        transport = new StdioClientTransport({
+        const transportInstance = new StdioClientTransport({
           command: state.config.command!,
-          args: state.config.args,
-          env: state.config.env ? { ...process.env, ...state.config.env } as Record<string, string> : undefined,
+          args: (state.config.args ?? []).map(resolveEnvVars),
+          env: state.config.env
+            ? ({ ...process.env, ...resolveEnvMap(state.config.env) } as Record<string, string>)
+            : undefined,
           cwd: state.config.cwd ?? this.workspaceRoot(),
           stderr: "pipe",
         });
+        transportInstance.stderr?.on("data", (chunk: Buffer) => {
+          const text = chunk.toString("utf8").trim();
+          if (text) this.log(`[mcp:${name}] ${text.slice(0, 500)}`);
+        });
+        transport = transportInstance;
       }
 
       const client = new Client(
@@ -99,9 +107,10 @@ export class McpClientManager {
       const listed = (await client.listTools()) as { tools?: McpToolDescriptor[] };
       const tools = listed.tools ?? [];
 
+      const prefix = `${sanitizeName(name)}_`;
+      this.registry.unregisterWhere((id) => id.startsWith(prefix));
       for (const tool of tools) {
-        const id = `${sanitizeName(name)}_${sanitizeName(tool.name)}`;
-        if (this.registry.get(id)) continue;
+        const id = `${prefix}${sanitizeName(tool.name)}`;
         this.registry.register(this.wrapTool(id, name, tool, client));
       }
 
@@ -128,6 +137,8 @@ export class McpClientManager {
       // best effort
     }
     clientCache.delete(name);
+    const prefix = `${sanitizeName(name)}_`;
+    this.registry.unregisterWhere((id) => id.startsWith(prefix));
     state.status = "disconnected";
     state.toolCount = 0;
   }
@@ -143,9 +154,7 @@ export class McpClientManager {
     tool: McpToolDescriptor,
     client: unknown,
   ): ToolSpec<never> {
-    const inputSchema = (tool.inputSchema ?? { type: "object", properties: {} }) as Record<string, unknown>;
-    delete inputSchema.$schema;
-
+    const inputSchema = (tool.inputSchema ?? { type: "object", properties: {} }) as JsonSchemaShape;
     const readOnly = Boolean(tool.annotations?.readOnlyHint);
     const cli = client as {
       callTool: (params: { name: string; arguments: Record<string, unknown> }) => Promise<{
@@ -161,7 +170,7 @@ export class McpClientManager {
       userDescription: `MCP tool from ${serverName}`,
       readOnly,
       destructive: Boolean(tool.annotations?.destructiveHint),
-      schema: z.object({}).passthrough() as never,
+      schema: jsonSchemaToZodObject(inputSchema) as never,
       execute: async (input: unknown) => {
         try {
           const result = await cli.callTool({
@@ -189,7 +198,12 @@ export function readMcpJsonConfigs(workspaceRoot: string | undefined): Record<st
     candidates.push(path.join(workspaceRoot, ".vscode", "mcp.json"));
     candidates.push(path.join(workspaceRoot, ".mcp.json"));
   }
-  candidates.push(path.join(process.env.USERPROFILE ?? process.env.HOME ?? "", ".cutad", "mcp.json"));
+  const homeDir = process.env.USERPROFILE ?? process.env.HOME;
+  candidates.push(
+    homeDir
+      ? path.join(homeDir, ".cutad", "mcp.json")
+      : path.join(configDir(), "mcp.json"),
+  );
 
   for (const file of candidates) {
     try {
@@ -214,6 +228,15 @@ function normalizeConfig(config: McpServerConfig): McpServerConfig {
     config.type = config.url ? "http" : "stdio";
   }
   return config;
+}
+
+function resolveEnvMap(map: Record<string, string> | undefined): Record<string, string> | undefined {
+  if (!map) return undefined;
+  const resolved: Record<string, string> = {};
+  for (const [key, value] of Object.entries(map)) {
+    resolved[key] = resolveEnvVars(value);
+  }
+  return resolved;
 }
 
 function sanitizeName(name: string): string {

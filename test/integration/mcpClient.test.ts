@@ -2,6 +2,7 @@ import { describe, it, expect, beforeAll, afterAll } from "vitest";
 import * as fs from "node:fs/promises";
 import * as os from "node:os";
 import * as path from "node:path";
+import { z } from "zod";
 
 const testHome = path.join(os.tmpdir(), `cutad-mcpclient-test-${Date.now()}`);
 process.env.CUTAD_CONFIG_DIR = testHome;
@@ -62,6 +63,17 @@ describe("MCP client manager (connects to the Cutad server as external server)",
       const readSpec = registry.get("cutadtest_read_file");
       expect(readSpec?.readOnly).toBe(true);
       expect(readSpec?.description).toContain("[MCP:cutadTest]");
+
+      // H-4 regression: the MCP client tool must expose the server's real input schema.
+      const schema = z.toJSONSchema(readSpec!.schema as z.ZodType) as {
+        properties?: Record<string, { type?: string }>;
+        required?: string[];
+      };
+      expect(schema.properties?.path).toBeDefined();
+      expect(schema.properties?.path?.type).toBe("string");
+      expect(schema.required).toContain("path");
+      expect(schema.properties?.startLine).toBeDefined();
+      expect(schema.required ?? []).not.toContain("startLine");
 
       const result = await readSpec!.execute({ path: "data.txt" } as never, {
         workspaceRoot: workspace,

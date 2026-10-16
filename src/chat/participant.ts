@@ -2,6 +2,7 @@ import * as vscode from "vscode";
 import { loadConfig, configPath } from "../config/homeConfig";
 import { runAsk, type AgentEvent } from "../llm/runtime";
 import { runAgent } from "../llm/agentRuntime";
+import { resolveContextWindow } from "../llm/gateway";
 import { assembleContext } from "../context/assembler";
 import { newRenderState, renderEvent, errorAction } from "./render";
 import { createDefaultRegistry } from "../tools/registry";
@@ -37,7 +38,6 @@ interface ChatSession {
   store: SessionStore;
   memory: MemoryState;
   temp: TempWorkspace;
-  planQueue: string[];
 }
 
 const sessions = new Map<string, ChatSession>();
@@ -46,21 +46,24 @@ function sessionFor(request: vscode.ChatRequest, model: string): ChatSession {
   const key = `${vscode.workspace.workspaceFolders?.[0]?.uri.fsPath ?? "no-workspace"}`;
   let session = sessions.get(key);
   if (!session) {
-    const store = SessionStore.create(key, model);
+    const resumed = SessionStore.latestForWorkspace(key);
+    const store = resumed ?? SessionStore.create(key, model);
+    if (resumed) store.ensure(key, model);
     session = {
       store,
       memory: new MemoryState(store.sessionId, key, model),
       temp: new TempWorkspace(store.sessionId),
-      planQueue: [],
     };
     sessions.set(key, session);
-    getLogger().info(`[session] created ${store.sessionId} (home: ~/.cutad, temp: ${session.temp.root})`);
+    getLogger().info(
+      `[session] ${resumed ? "resumed" : "created"} ${store.sessionId} (home: ~/.cutad, temp: ${session.temp.root})`,
+    );
   }
   return session;
 }
 
 export function getActiveSession(): ChatSession | undefined {
-  return [...sessions.values()][0];
+  return activeSession ?? [...sessions.values()][0];
 }
 
 export function getSkillEngine(): SkillEngine | undefined {
@@ -77,6 +80,19 @@ export function getRegistry(): ToolRegistry | undefined {
 
 export function getGate(): ApprovalGate | undefined {
   return gate;
+}
+
+export function disposeSessions(): void {
+  for (const session of sessions.values()) {
+    try {
+      session.memory.persist();
+      session.temp.cleanup();
+    } catch (err) {
+      getLogger().warn(`[session] cleanup failed: ${err instanceof Error ? err.message : String(err)}`);
+    }
+  }
+  sessions.clear();
+  activeSession = undefined;
 }
 
 export function registerParticipant(context: vscode.ExtensionContext): void {
@@ -199,11 +215,27 @@ const handler: vscode.ChatRequestHandler = async (
   session.memory.incrementTurn();
   session.store.addMessage("user", request.prompt, command);
 
+  const contextWindow = await resolveContextWindow(config).catch(() => 200_000);
+
+  const capturedText: string[] = [];
+  const captureStream = new Proxy(stream, {
+    get(target, prop) {
+      if (prop === "markdown") {
+        return (value: string | vscode.MarkdownString) => {
+          capturedText.push(typeof value === "string" ? value : value.value);
+          (target.markdown as (v: unknown) => void).call(target, value);
+        };
+      }
+      const member = (target as unknown as Record<PropertyKey, unknown>)[prop];
+      return typeof member === "function" ? (member as (...a: unknown[]) => unknown).bind(target) : member;
+    },
+  });
+
   const renderState = newRenderState();
   const sink = {
-    markdown: (value: string) => stream.markdown(value),
-    progress: (value: string) => stream.progress(value),
-    button: (cmd: { command: string; title: string }) => stream.button(cmd),
+    markdown: (value: string) => captureStream.markdown(value),
+    progress: (value: string) => captureStream.progress(value),
+    button: (cmd: { command: string; title: string }) => captureStream.button(cmd),
   };
 
   let lastErrorAction: { command: string; title: string } | undefined;
@@ -221,114 +253,127 @@ const handler: vscode.ChatRequestHandler = async (
   };
   activeOnEvent = onEvent;
 
+  let turnMode = command;
   const finishTurn = (mode: string) => {
-    session.store.addMessage("assistant", responseText, mode);
-    session.memory.persist();
-    activeToken = undefined;
-    activeOnEvent = undefined;
-    activeSignal = undefined;
+    turnMode = mode;
     return { metadata: { mode } };
   };
 
   const skillBlock = buildSkillBlock(request.prompt, command, session);
 
-  if (command === "skills") {
-    stream.markdown(renderSkills());
-    return { metadata: { mode: "help" } };
-  }
+  try {
+    if (command === "skills") {
+      stream.markdown(renderSkills());
+      return finishTurn("help");
+    }
 
-  if (command === "mcp") {
-    stream.markdown(renderMcpStatus());
-    return { metadata: { mode: "help" } };
-  }
+    if (command === "mcp") {
+      stream.markdown(renderMcpStatus());
+      return finishTurn("help");
+    }
 
-  if (command === "plan") {
-    const result = await runPlanMode({
-      request,
-      stream,
-      token,
-      onEvent,
-      log: (m) => log.info(m),
-      config,
-      controller,
-      registry,
-      gate,
-      session,
-      skillBlock,
+    if (command === "plan") {
+      const result = await runPlanMode({
+        request,
+        stream: captureStream,
+        token,
+        onEvent,
+        log: (m) => log.info(m),
+        config,
+        controller,
+        registry,
+        gate,
+        session,
+        skillBlock,
+        contextWindow,
+      });
+      if (lastErrorAction) stream.button(lastErrorAction);
+      turnMode = (result.metadata as { mode?: string } | undefined)?.mode ?? "plan-created";
+      return result;
+    }
+
+    if (command === "debug") {
+      await runDebugMode({
+        request,
+        stream: captureStream,
+        token,
+        onEvent,
+        log: (message) => log.info(message),
+        config,
+        controller,
+        registry,
+        gate,
+        session,
+        skillBlock,
+        contextWindow,
+      });
+      if (lastErrorAction) stream.button(lastErrorAction);
+      return finishTurn("debug");
+    }
+
+    if (command === "agent") {
+      await runAgentMode({
+        request,
+        stream: captureStream,
+        token,
+        onEvent,
+        log: (message) => log.info(message),
+        config,
+        controller,
+        registry,
+        gate,
+        session,
+        skillBlock,
+        contextWindow,
+      });
+      if (lastErrorAction) stream.button(lastErrorAction);
+      return finishTurn("agent");
+    }
+
+    const activeEditor = vscode.window.activeTextEditor;
+    const assembled = await assembleContext({
+      references: request.references,
+      activeEditor,
+      contextWindow,
+      truncateKB: config.tools.truncateKB,
     });
+
+    if (assembled.includedLabels.length > 0) {
+      stream.progress(`Context: ${assembled.includedLabels.join(", ")}`);
+    }
+
+    const history = context.history
+      .slice(-6)
+      .map((turn) => {
+        if (turn instanceof vscode.ChatRequestTurn) return `User: ${turn.prompt}`;
+        if (turn instanceof vscode.ChatResponseTurn) {
+          const text = turn.response
+            .map((part) => (part instanceof vscode.ChatResponseMarkdownPart ? part.value.value : ""))
+            .join("");
+          return `Assistant: ${text.slice(0, 500)}`;
+        }
+        return "";
+      })
+      .filter(Boolean)
+      .join("\n");
+
+    const prompt = buildPrompt(request.prompt, assembled.text, history, skillBlock);
+    stream.progress(`Thinking with ${config.model}…`);
+    await runAsk({ config, prompt, signal: controller.signal, onEvent });
+
     if (lastErrorAction) stream.button(lastErrorAction);
-    return result;
+    return finishTurn("ask");
+  } finally {
+    const persisted = responseText || capturedText.join("");
+    if (persisted.trim()) {
+      session.store.addMessage("assistant", persisted, turnMode);
+    }
+    session.memory.persist();
+    activeToken = undefined;
+    activeOnEvent = undefined;
+    activeSignal = undefined;
+    activeSession = undefined;
   }
-
-  if (command === "debug") {
-    await runDebugMode({
-      request,
-      stream,
-      token,
-      onEvent,
-      log: (message) => log.info(message),
-      config,
-      controller,
-      registry,
-      gate,
-      session,
-      skillBlock,
-    });
-    if (lastErrorAction) stream.button(lastErrorAction);
-    return finishTurn("debug");
-  }
-
-  if (command === "agent") {
-    await runAgentMode({
-      request,
-      stream,
-      token,
-      onEvent,
-      log: (message) => log.info(message),
-      config,
-      controller,
-      registry,
-      gate,
-      session,
-      skillBlock,
-    });
-    if (lastErrorAction) stream.button(lastErrorAction);
-    return finishTurn("agent");
-  }
-
-  const activeEditor = vscode.window.activeTextEditor;
-  const assembled = await assembleContext({
-    references: request.references,
-    activeEditor,
-    contextWindow: 200_000,
-    truncateKB: config.tools.truncateKB,
-  });
-
-  if (assembled.includedLabels.length > 0) {
-    stream.progress(`Context: ${assembled.includedLabels.join(", ")}`);
-  }
-
-  const history = context.history
-    .slice(-6)
-    .map((turn) => {
-      if (turn instanceof vscode.ChatRequestTurn) return `User: ${turn.prompt}`;
-      if (turn instanceof vscode.ChatResponseTurn) {
-        const text = turn.response
-          .map((part) => (part instanceof vscode.ChatResponseMarkdownPart ? part.value.value : ""))
-          .join("");
-        return `Assistant: ${text.slice(0, 500)}`;
-      }
-      return "";
-    })
-    .filter(Boolean)
-    .join("\n");
-
-  const prompt = buildPrompt(request.prompt, assembled.text, history, skillBlock);
-  stream.progress(`Thinking with ${config.model}…`);
-  await runAsk({ config, prompt, signal: controller.signal, onEvent });
-
-  if (lastErrorAction) stream.button(lastErrorAction);
-  return finishTurn("ask");
 };
 
 function buildSkillBlock(prompt: string, mode: string, session: ChatSession): string {
@@ -384,6 +429,7 @@ interface PlanModeArgs {
   gate: ApprovalGate | undefined;
   session: ChatSession;
   skillBlock: string;
+  contextWindow: number;
 }
 
 async function runPlanMode(args: PlanModeArgs): Promise<vscode.ChatResult> {
@@ -405,6 +451,7 @@ async function runPlanMode(args: PlanModeArgs): Promise<vscode.ChatResult> {
       log,
       session,
       skillBlock,
+      contextWindow: args.contextWindow,
     });
   }
 
@@ -434,7 +481,7 @@ async function runPlanMode(args: PlanModeArgs): Promise<vscode.ChatResult> {
   const contextInfo = await assembleContext({
     references: request.references,
     activeEditor: vscode.window.activeTextEditor,
-    contextWindow: 200_000,
+    contextWindow: args.contextWindow,
     truncateKB: config.tools.truncateKB,
   });
 
@@ -484,6 +531,7 @@ interface ExecutePlanArgs {
   log: (message: string) => void;
   session: ChatSession;
   skillBlock: string;
+  contextWindow: number;
 }
 
 async function executePlan(args: ExecutePlanArgs): Promise<vscode.ChatResult> {
@@ -535,7 +583,9 @@ async function executePlan(args: ExecutePlanArgs): Promise<vscode.ChatResult> {
   plan = { ...plan, status: "in-progress" };
   persistPlan(session, plan);
 
-  const threadId = `plan-${session.store.sessionId}-${plan.slug}`;
+  const planComplete = plan.steps.every((s) => s.status === "done" || s.status === "skipped");
+  const runStamp = planComplete ? `-${Date.now().toString(36)}` : "";
+  const threadId = `plan-${session.store.sessionId}-${plan.slug}${runStamp}`;
   let graph = planGraphs.get(threadId);
   if (!graph) {
     graph = buildPlanExecGraph({
@@ -675,7 +725,7 @@ async function executeStepWithAgent(args: ExecuteStepArgs): Promise<{ ok: boolea
   session.memory.incrementDenials(result.denied);
   session.memory.recordFilesChanged(result.filesChanged);
 
-  const ok = result.denied === 0 && result.toolCalls > 0;
+  const ok = result.denied === 0 && (result.toolCalls > 0 || result.textLength > 0);
   return {
     ok,
     summary: `${result.toolCalls} tool calls, files: ${result.filesChanged.join(", ") || "none"}`,
@@ -700,6 +750,7 @@ function scheduleSkillLearning(params: {
   signal: AbortSignal;
 }): void {
   if (!skillEngine) return;
+  if (!params.config.agent.learnSkills) return;
   if (params.toolsUsed.length === 0 && params.filesChanged.length === 0) return;
 
   const engine = skillEngine;
@@ -761,6 +812,7 @@ interface AgentModeArgs {
   gate: ApprovalGate | undefined;
   session: ChatSession;
   skillBlock: string;
+  contextWindow: number;
 }
 
 async function runDebugMode(args: AgentModeArgs): Promise<void> {
@@ -782,7 +834,7 @@ async function runDebugMode(args: AgentModeArgs): Promise<void> {
   const contextInfo = await assembleContext({
     references: request.references,
     activeEditor: vscode.window.activeTextEditor,
-    contextWindow: 200_000,
+    contextWindow: args.contextWindow,
     truncateKB: config.tools.truncateKB,
   });
 
@@ -874,7 +926,7 @@ async function runAgentMode(args: AgentModeArgs): Promise<void> {
   const contextInfo = await assembleContext({
     references: request.references,
     activeEditor: vscode.window.activeTextEditor,
-    contextWindow: 200_000,
+    contextWindow: args.contextWindow,
     truncateKB: config.tools.truncateKB,
   });
 
@@ -1026,6 +1078,32 @@ function renderSkills(): string {
 }
 
 function helpMarkdown(model: string, toolCount: number): string {
+  const session = getActiveSession();
+  const statsLines: string[] = [];
+  if (session) {
+    const stats = session.store.toolUsageSummary();
+    const delegations = session.store.delegationStats();
+    const memory = session.memory.current;
+    if (stats.length > 0) {
+      statsLines.push(
+        "",
+        "**Session tool usage**",
+        "| Tool | Calls | Denied |",
+        "|---|---|---|",
+        ...stats.slice(0, 8).map((s) => `| \`${s.toolId}\` | ${s.count} | ${s.denied} |`),
+      );
+    }
+    if (delegations.length > 0) {
+      statsLines.push(
+        "",
+        `**Delegations:** ${delegations.map((d) => `${d.specialist} ×${d.count} (${d.count - d.failed} ok)`).join(", ")}`,
+      );
+    }
+    statsLines.push(
+      "",
+      `**Memory state:** ${memory.counters.turns} turns · ${memory.counters.toolCalls} tool calls · ${memory.counters.denials} denied · ${memory.counters.errors} errors · files touched: ${memory.lastFilesChanged.length}`,
+    );
+  }
   return [
     `**Cutad.AI** — active model: \`${model}\` · ${toolCount} tools registered`,
     "",
@@ -1040,6 +1118,7 @@ function helpMarkdown(model: string, toolCount: number): string {
     "| `/skills` | ✅ list installed skills |",
     "| `/mcp` | ✅ MCP server status |",
     "| `/help` | ✅ this message |",
+    ...statsLines,
     "",
     `Config: \`${configPath()}\` · Storage: \`~/.cutad/\` (SQLite + sessions + skills)`,
   ].join("\n");

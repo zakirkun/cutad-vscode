@@ -1,5 +1,5 @@
 import * as vscode from "vscode";
-import { registerParticipant } from "./chat/participant";
+import { registerParticipant, disposeSessions } from "./chat/participant";
 import { registerCommands } from "./commands";
 import { disposeLogger, getLogger } from "./util/logger";
 
@@ -14,5 +14,6 @@ export function activate(context: vscode.ExtensionContext): void {
 }
 
 export function deactivate(): void {
+  disposeSessions();
   disposeLogger();
 }

@@ -7,6 +7,14 @@
   "private": true,
   "license": "MIT",
   "icon": "assets/icon.png",
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/zakirkun/cutad-vscode.git"
+  },
+  "homepage": "https://github.com/zakirkun/cutad-vscode#readme",
+  "bugs": {
+    "url": "https://github.com/zakirkun/cutad-vscode/issues"
+  },
   "engines": {
     "vscode": "^1.140.0"
   },

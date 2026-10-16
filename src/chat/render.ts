@@ -12,10 +12,17 @@ export interface RenderState {
   sawReasoning: boolean;
   textStarted: boolean;
   reasoningLineStart: boolean;
+  lastUsage?: { inputTokens: number; outputTokens: number; reasoningTokens: number };
 }
 
 export function newRenderState(): RenderState {
   return { inReasoning: false, sawReasoning: false, textStarted: false, reasoningLineStart: true };
+}
+
+function formatTokens(value: number): string {
+  if (value >= 1_000_000) return `${(value / 1_000_000).toFixed(1)}M`;
+  if (value >= 1_000) return `${(value / 1_000).toFixed(1)}k`;
+  return String(value);
 }
 
 export function renderEvent(
@@ -70,6 +77,16 @@ export function renderEvent(
       break;
 
     case "usage":
+      state.lastUsage = event;
+      if (state.inReasoning) {
+        sink.markdown("\n\n");
+        state.inReasoning = false;
+      }
+      sink.markdown(
+        `\n\n<sub>· ${formatTokens(event.inputTokens)} in / ${formatTokens(event.outputTokens)} out${
+          event.reasoningTokens > 0 ? ` / ${formatTokens(event.reasoningTokens)} thinking` : ""
+        }</sub>`,
+      );
       break;
 
     case "rate-limit":

@@ -45,7 +45,7 @@ Streams answers with the model's thinking shown in a collapsible block (when the
 Every mutating action (file writes, terminal commands, git operations) requires confirmation. Read-only tools run freely. Destructive commands (`rm -rf`, `git reset --hard`, force push, `curl | sh`) can never be auto-approved. In untrusted workspaces, all mutations are disabled.
 
 ### Planning mode
-Plans are durable artifacts stored in SQLite with step-by-step execution, per-step approval, skip/abort, and resume across window reloads (LangGraph checkpointing).
+Plans are durable artifacts stored in SQLite with step-by-step execution, per-step approval, skip/abort, and in-session resume via LangGraph checkpointing (checkpoints are in-memory; after a window reload the plan resumes at the step level from SQLite).
 
 ### Debug mode
 Reads **real runtime state** via the debug adapter: threads, stack frames, scopes, and variables at a breakpoint. Runs your test suite (auto-detects npm/pytest/cargo/go) and parses failures from vitest/jest/mocha/pytest/cargo output. Evidence-first: reproduce → read state → one hypothesis → fix root cause → verify.
@@ -75,7 +75,10 @@ Skills are plain markdown — edit them, delete them, or ask the agent to create
 }
 ```
 
-**Expose** Cutad.AI's tools as an MCP server — **Cutad.AI: Start MCP Server**, or point external clients at `dist/mcp-server.js`:
+**Expose** Cutad.AI's tools as an MCP server — two modes via **Cutad.AI: Start MCP Server**:
+
+- **In-editor (recommended)** — a localhost HTTP endpoint (`http://127.0.0.1:3987/mcp`) where **every mutating tool prompts you in VS Code** through the approval gate before running.
+- **Standalone (auto-approves)** — spawns `dist/mcp-server.js` in a terminal with **no approval prompts**; use only in trusted workspaces. External clients can also connect directly:
 
 ```json
 {
@@ -88,9 +91,9 @@ Skills are plain markdown — edit them, delete them, or ask the agent to create
 }
 ```
 
-> In-editor mode routes mutations through the VS Code approval gate. Standalone mode has no UI and auto-approves — use it only in trusted workspaces.
+> Prefer the in-editor mode for interactive use — it enforces approvals. The standalone mode is for trusted, automated scenarios.
 
-### Built-in tools (20)
+### Built-in tools (25 in-editor, 12 in the standalone MCP server)
 Read: `read_file` · `list_dir` · `search_text` · `find_files` · `get_workspace_tree` · `get_diagnostics` · `get_open_editors` · `get_selection` · `git_status` · `git_diff` · `get_debug_state` · `list_breakpoints` · `fetch_url` · `list_skills` · `read_skill`
 Mutating (approval required): `apply_patch` · `write_file` · `run_command` · `run_tests` · `set_breakpoint` · `remove_breakpoint` · `launch_debug` · `create_skill` · `delete_skill` · `delegate_to_specialist`
 

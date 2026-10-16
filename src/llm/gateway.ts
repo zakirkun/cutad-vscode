@@ -67,3 +67,24 @@ export async function listModels(config: CutadConfig): Promise<GatewayModelInfo[
     reasoning: Boolean(m.capabilities?.reasoning),
   }));
 }
+
+const DEFAULT_CONTEXT_WINDOW = 200_000;
+const modelCache = new Map<string, { models: GatewayModelInfo[]; fetchedAt: number }>();
+const MODEL_CACHE_TTL_MS = 10 * 60 * 1000;
+
+export async function resolveContextWindow(config: CutadConfig): Promise<number> {
+  const cacheKey = `${config.baseUrl}|${config.apiKey.slice(0, 8)}`;
+  const cached = modelCache.get(cacheKey);
+  if (cached && Date.now() - cached.fetchedAt < MODEL_CACHE_TTL_MS) {
+    const hit = cached.models.find((m) => m.id === config.model);
+    return hit?.contextWindow && hit.contextWindow > 0 ? hit.contextWindow : DEFAULT_CONTEXT_WINDOW;
+  }
+  try {
+    const models = await listModels(config);
+    modelCache.set(cacheKey, { models, fetchedAt: Date.now() });
+    const hit = models.find((m) => m.id === config.model);
+    return hit?.contextWindow && hit.contextWindow > 0 ? hit.contextWindow : DEFAULT_CONTEXT_WINDOW;
+  } catch {
+    return DEFAULT_CONTEXT_WINDOW;
+  }
+}

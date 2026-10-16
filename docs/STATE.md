@@ -27,10 +27,8 @@
 | P5 | MCP (Client + Server) | 🟢 COMPLETE | ✅ | 2026-10-15 | 2026-10-15 |
 | P6 | Hardening & Release | 🟢 COMPLETE | ✅ | 2026-10-15 | 2026-10-15 |
 
-**Release artifacts:** `cutad-ai-0.1.0.vsix` (781 KB, 10 files) — built, installed, and verified (`cutad.cutad-ai@0.1.0`).
-**Remaining user-side actions:** publisher account (marketplace publish), final F5 demo, telemetry decision (Q-6).
-| P5 | MCP (Client + Server) | ⬜ TODO | ⬜ | — | — |
-| P6 | Hardening & Release | ⬜ TODO | ⬜ | — | — |
+**Release artifacts:** `cutad-ai-0.2.0.vsix` — security & reliability release (audit remediation). Previous: `cutad-ai-0.1.0.vsix` (781 KB) — published to the marketplace 2026-10-15.
+**Remaining user-side actions:** republish 0.2.0 to the marketplace, final F5 demo, telemetry decision (Q-6).
 
 **Blocker watch:** ~~R-1 (Node ≥22 for AI SDK 7)~~ ✅ **RESOLVED 2026-10-15** — extension host = Electron 43.7.7 → Node v24.21.0 ≥ 22. AI SDK 7 stays. ~~R-4 (LangGraph bundling)~~ ✅ **RESOLVED 2026-10-15** — S-3 spike passed: StateGraph + AI SDK run from esbuild CJS bundle. ~~R-3 (reasoning format)~~ ✅ **RESOLVED 2026-10-15** — S-4 spike passed: gateway returns `reasoning-start/delta/end` parts when `providerOptions: { cutad: { reasoningEffort } }` is set; without it reasoning is inline text.
 **New finding:** IPv6-first DNS hangs on this network → `setDefaultResultOrder("ipv4first")` applied in `src/llm/gateway.ts` (single HTTP path).

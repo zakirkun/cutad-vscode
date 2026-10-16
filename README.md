@@ -108,11 +108,20 @@ All settings live in `~/.cutad/config.json`:
   "model": "workbuddy/deepseek-v4.1-flash",
   "maxOutputTokens": 8192,
   "reasoning": { "show": true, "effort": "high" },
-  "agent": { "maxIterations": 25, "autoApprove": [] },
+  "agent": { "maxIterations": 25, "autoApprove": [], "learnSkills": true },
   "tools": { "truncateKB": 64 },
   "telemetry": { "enabled": false }
 }
 ```
+
+VS Code settings (Settings UI → search "cutad"):
+
+| Setting | Default | Purpose |
+|---|---|---|
+| `cutad.mcp.port` | `3987` | Localhost port for the in-editor MCP server |
+| `cutad.baseUrl` | gateway URL | Override the API endpoint |
+| `cutad.model` | (empty) | Default model id |
+| `cutad.reasoning.show` | `true` | Show/hide the thinking block |
 
 ## Storage
 
@@ -126,7 +135,7 @@ All settings live in `~/.cutad/config.json`:
 └── mcp.json             ← optional global MCP server config
 ```
 
-Session scratch files go to your OS temp dir (`%TEMP%/cutad/<id>/`), never into the workspace.
+Sessions resume automatically for the same workspace (within 12 hours) across window reloads. Session scratch files go to your OS temp dir (`%TEMP%/cutad/<id>/`) and are cleaned up on deactivate, never touching the workspace.
 
 ## Requirements
 
@@ -142,6 +151,8 @@ Session scratch files go to your OS temp dir (`%TEMP%/cutad/<id>/`), never into 
 | Model errors | Run **Cutad.AI: Select Model** to see models available to your plan |
 | Rate limited | Wait for the window to reset (`/help` shows status bar quota); the client retries automatically with backoff |
 | MCP server not connecting | Check `/mcp` for the error message; verify the command works in a terminal |
+| In-editor MCP port busy | Change `cutad.mcp.port` in Settings, then re-run **Cutad.AI: Start MCP Server** |
+| Plan missing after reload | Plans are stored per session; sessions resume within 12h — `/plan list` shows the current session's plans |
 
 Diagnostics: **Cutad.AI: Show Diagnostics** opens the output channel with version, model, config path, and recent errors.
 

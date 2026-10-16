@@ -22,6 +22,7 @@ const spikeEntries = [
   { in: "src/spikes/langgraphInterruptSpike.ts", out: "langgraph-interrupt-spike" },
   { in: "src/spikes/seedSkills.ts", out: "seed-skills" },
   { in: "src/spikes/mcpRoundtripSpike.ts", out: "mcp-roundtrip-spike" },
+  { in: "src/spikes/mcpHttpSpike.ts", out: "mcp-http-spike" },
 ];
 
 /** @type {import('esbuild').BuildOptions} */

@@ -41,7 +41,12 @@ class CutadLmTool<T> implements vscode.LanguageModelTool<T> {
     options: vscode.LanguageModelToolInvocationOptions<T>,
     token: vscode.CancellationToken,
   ): Promise<vscode.LanguageModelToolResult> {
-    const decision = await this.gate.request(this.spec, approvalRequestFor(this.spec, summarize(options.input)));
+    const record = (options.input ?? {}) as Record<string, unknown>;
+    const command = typeof record.command === "string" ? record.command : undefined;
+    const decision = await this.gate.request(
+      this.spec,
+      approvalRequestFor(this.spec, summarize(options.input), undefined, command),
+    );
     if (decision === "deny") {
       throw new Error("User denied this action. Do not retry; continue without it or explain what you need.");
     }

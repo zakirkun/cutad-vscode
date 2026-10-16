@@ -13,6 +13,8 @@ jobs:
       matrix:
         os: [ubuntu-latest, windows-latest, macos-latest]
     runs-on: ${{ matrix.os }}
+    env:
+      CUTAD_API_KEY: ${{ secrets.CUTAD_API_KEY }}
     steps:
       - uses: actions/checkout@v4
 
@@ -38,8 +40,6 @@ jobs:
 
       - name: Live gateway tests (only when CUTAD_API_KEY is configured)
         if: ${{ env.CUTAD_API_KEY != '' }}
-        env:
-          CUTAD_API_KEY: ${{ secrets.CUTAD_API_KEY }}
         run: npx vitest run test/integration
 
   package:

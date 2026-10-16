@@ -19,6 +19,8 @@ export interface ApprovalRequest {
   summary: string;
   detail?: string;
   destructive: boolean;
+  /** Raw command for run_command — inspected for destructive patterns before deciding. */
+  command?: string;
 }
 
 export type ApprovalDecision = "allow" | "allow-session" | "deny";

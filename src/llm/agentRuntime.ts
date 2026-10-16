@@ -85,13 +85,14 @@ export async function runAgent(options: AgentRunOptions): Promise<AgentRunResult
           break;
         case "tool-error": {
           const text = part.error instanceof Error ? part.error.message : String(part.error);
-          if (text.includes("denied")) denied++;
+          const wasDenied = text.includes("User denied");
+          if (wasDenied) denied++;
           onEvent({
             type: "tool-end",
             toolCallId: part.toolCallId,
             toolId: part.toolName,
             ok: false,
-            preview: text.slice(0, 300),
+            preview: (wasDenied ? "denied — " : "") + text.slice(0, 300),
           });
           break;
         }
@@ -146,16 +147,21 @@ function toAiSdkTool(spec: ToolSpec<never>, options: AgentRunOptions) {
     description: spec.description,
     inputSchema: spec.schema as z.ZodType,
     execute: async (input: unknown): Promise<string> => {
+      const record = (input ?? {}) as Record<string, unknown>;
       const summary = `${spec.displayName}: ${summarizeInput(input)}`;
+      const command = typeof record.command === "string" ? record.command : undefined;
       const decision = await options.approve({
         toolId: spec.id,
         displayName: spec.displayName,
         summary,
         detail: undefined,
         destructive: Boolean(spec.destructive),
+        command,
       });
       if (decision === "deny") {
-        return `User denied this action. Do not retry it; continue without it or explain what you need.`;
+        throw new Error(
+          `User denied this action. Do not retry it; continue without it or explain what you need.`,
+        );
       }
 
       const ctx: ToolContext = {
@@ -168,7 +174,10 @@ function toAiSdkTool(spec: ToolSpec<never>, options: AgentRunOptions) {
       try {
         result = await spec.execute(input as never, ctx);
       } catch (err) {
-        result = { ok: false, content: `Tool crashed: ${err instanceof Error ? err.message : String(err)}` };
+        throw new Error(`Tool crashed: ${err instanceof Error ? err.message : String(err)}`);
+      }
+      if (!result.ok) {
+        throw new Error(result.content);
       }
       return result.content;
     },

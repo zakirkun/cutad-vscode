@@ -1,5 +1,5 @@
 import { z } from "zod";
-import { ok, fail, type ToolSpec, type ToolRegistry } from "../spec";
+import { ok, fail, type ToolSpec, type ToolRegistry, type ApprovalRequest, type ApprovalDecision } from "../spec";
 import { SPECIALISTS, getSpecialist, subsetRegistry } from "../../agent/specialists";
 import { runAgent } from "../../llm/agentRuntime";
 import type { CutadConfig } from "../../config/homeConfig";
@@ -15,6 +15,8 @@ export interface DelegationContext {
   signal: () => AbortSignal;
   sessionId: () => string;
   recordDelegation: (specialist: string, task: string, ok: boolean, summary: string) => void;
+  /** Real approval gate — mutating tools inside a delegation must prompt the user. */
+  approve: (request: ApprovalRequest) => Promise<ApprovalDecision>;
 }
 
 export function createDelegateTool(ctx: DelegationContext): ToolSpec<{ specialist: string; task: string }> {
@@ -67,7 +69,7 @@ export function createDelegateTool(ctx: DelegationContext): ToolSpec<{ specialis
           signal: ctx.signal(),
           token: ctx.token(),
           workspaceRoot,
-          approve: async () => (specialist.readOnly ? "allow" : "deny"),
+          approve: (request) => ctx.approve(request),
           onEvent: (event) => {
             if (event.type === "text-delta") collected.push(event.text);
           },

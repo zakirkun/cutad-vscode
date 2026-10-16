@@ -1,4 +1,5 @@
 import type { ApprovalDecision, ApprovalRequest } from "./spec";
+import { isDestructiveCommand } from "./fsGuard";
 
 export interface ApprovalPolicy {
   autoApprove: string[];
@@ -15,6 +16,12 @@ export type PolicyOutcome =
   | { kind: "auto-allow" }
   | { kind: "must-ask"; forced: boolean }
   | { kind: "deny-untrusted" };
+
+export function isDestructiveRequest(request: Pick<ApprovalRequest, "destructive" | "command">): boolean {
+  if (request.destructive) return true;
+  if (request.command && isDestructiveCommand(request.command)) return true;
+  return false;
+}
 
 export function decidePolicy(
   subject: ApprovalSubject,

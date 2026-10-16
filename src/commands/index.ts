@@ -97,23 +97,68 @@ export function registerCommands(context: vscode.ExtensionContext): void {
 
   context.subscriptions.push(
     vscode.commands.registerCommand("cutad.startMcpServer", async () => {
-      const { getActiveSession } = await import("../chat/participant");
-      const session = getActiveSession();
-      const workspaceRoot = vscode.workspace.workspaceFolders?.[0]?.uri.fsPath;
+      const { getActiveSession, getRegistry, getGate } = await import("../chat/participant");
+      const registry = getRegistry();
+      const gate = getGate();
+      if (!registry || !gate) {
+        void vscode.window.showWarningMessage("Cutad.AI: extension not fully initialized.");
+        return;
+      }
 
-      const terminal = vscode.window.createTerminal({
-        name: "Cutad.AI MCP Server",
-        cwd: workspaceRoot ?? session?.temp.root,
-        hideFromUser: false,
-      });
-      const serverPath = path.join(context.extensionPath, "dist", "mcp-server.js");
-      const args = workspaceRoot ? ` --workspace "${workspaceRoot}"` : "";
-      terminal.sendText(`node "${serverPath}"${args}`, true);
-      terminal.show();
-      void vscode.window.showInformationMessage(
-        "Cutad.AI: MCP server starting in the terminal. External clients connect via stdio to this process.",
+      const workspaceRoot = vscode.workspace.workspaceFolders?.[0]?.uri.fsPath;
+      const mode = await vscode.window.showQuickPick(
+        [
+          {
+            label: "$(shield) In-editor server (recommended)",
+            detail: "Localhost HTTP endpoint. Mutating tools prompt you in VS Code before running.",
+            value: "in-editor" as const,
+          },
+          {
+            label: "$(warning) Standalone terminal server (auto-approves)",
+            detail: "Spawns dist/mcp-server.js in a terminal. NO approval prompts — trusted workspaces only.",
+            value: "terminal" as const,
+          },
+        ],
+        { title: "Cutad.AI — Start MCP Server", ignoreFocusOut: true },
       );
-      getLogger().info(`[mcp] server started: node ${serverPath}${args}`);
+      if (!mode) return;
+
+      if (mode.value === "terminal") {
+        const session = getActiveSession();
+        const terminal = vscode.window.createTerminal({
+          name: "Cutad.AI MCP Server (auto-approve)",
+          cwd: workspaceRoot ?? session?.temp.root,
+          hideFromUser: false,
+        });
+        const serverPath = path.join(context.extensionPath, "dist", "mcp-server.js");
+        const args = workspaceRoot ? ` --workspace "${workspaceRoot}"` : "";
+        terminal.sendText(`node "${serverPath}"${args}`, true);
+        terminal.show();
+        void vscode.window.showWarningMessage(
+          "Cutad.AI: standalone MCP server started — it AUTO-APPROVES all tool calls. Use only in trusted workspaces.",
+        );
+        getLogger().info(`[mcp] standalone server started: node ${serverPath}${args}`);
+        return;
+      }
+
+      const { startInEditorMcpServer } = await import("../tools/inEditorMcp");
+      const port = vscode.workspace.getConfiguration("cutad").get<number>("mcp.port") ?? 3987;
+      const running = await startInEditorMcpServer({
+        registry,
+        workspaceRoot,
+        approve: async (request) => {
+          const spec = registry.get(request.toolId);
+          if (!spec) return "deny";
+          return gate.request(spec, request);
+        },
+        onLog: (message) => getLogger().info(message),
+        port,
+      });
+
+      context.subscriptions.push({ dispose: () => void running.close() });
+      void vscode.window.showInformationMessage(
+        `Cutad.AI: in-editor MCP server running at ${running.url} — mutations prompt in VS Code.`,
+      );
     }),
   );
 

@@ -140,6 +140,11 @@
           "type": "boolean",
           "default": false,
           "description": "Opt-in anonymous telemetry (event names only, never code or prompts)."
+        },
+        "cutad.mcp.port": {
+          "type": "number",
+          "default": 3987,
+          "description": "Localhost port for the in-editor MCP server (Streamable HTTP)."
         }
       }
     },

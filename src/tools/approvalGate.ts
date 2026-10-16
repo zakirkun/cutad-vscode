@@ -1,5 +1,5 @@
 import * as vscode from "vscode";
-import { decidePolicy, SessionApprovals, type ApprovalPolicy } from "./approvalPolicy";
+import { decidePolicy, SessionApprovals, isDestructiveRequest, type ApprovalPolicy } from "./approvalPolicy";
 import type { ApprovalDecision, ApprovalRequest, ToolSpec } from "./spec";
 
 export class ApprovalGate {
@@ -8,8 +8,9 @@ export class ApprovalGate {
   constructor(private readonly getPolicy: () => ApprovalPolicy) {}
 
   async request(spec: ToolSpec<never>, request: ApprovalRequest): Promise<ApprovalDecision> {
+    const destructive = isDestructiveRequest(request);
     const outcome = decidePolicy(
-      { toolId: spec.id, readOnly: spec.readOnly, destructive: Boolean(spec.destructive) },
+      { toolId: spec.id, readOnly: spec.readOnly, destructive },
       this.getPolicy(),
       this.session.snapshot(),
     );
@@ -30,8 +31,12 @@ export class ApprovalGate {
     }
     items.push({ label: "$(x) Deny", decision: "deny" });
 
+    const title = destructive
+      ? `Cutad.AI — ⚠ Destructive command requires approval`
+      : `Cutad.AI — Approve "${spec.displayName}"?`;
+
     const picked = await vscode.window.showQuickPick(items, {
-      title: `Cutad.AI — Approve "${spec.displayName}"?`,
+      title,
       placeHolder: request.summary,
       ignoreFocusOut: true,
     });
@@ -46,12 +51,18 @@ export class ApprovalGate {
   }
 }
 
-export function approvalRequestFor(spec: ToolSpec<never>, summary: string, detail?: string): ApprovalRequest {
+export function approvalRequestFor(
+  spec: ToolSpec<never>,
+  summary: string,
+  detail?: string,
+  command?: string,
+): ApprovalRequest {
   return {
     toolId: spec.id,
     displayName: spec.displayName,
     summary,
     detail,
     destructive: Boolean(spec.destructive),
+    command,
   };
 }

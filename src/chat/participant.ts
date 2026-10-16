@@ -71,6 +71,14 @@ export function getMcpClient(): McpClientManager | undefined {
   return mcpClient;
 }
 
+export function getRegistry(): ToolRegistry | undefined {
+  return registry;
+}
+
+export function getGate(): ApprovalGate | undefined {
+  return gate;
+}
+
 export function registerParticipant(context: vscode.ExtensionContext): void {
   ensureSkillUsageTable();
   skillEngine = new SkillEngine();
@@ -94,9 +102,14 @@ export function registerParticipant(context: vscode.ExtensionContext): void {
       token: () => activeToken ?? new vscode.CancellationTokenSource().token,
       onEvent: (event) => activeOnEvent?.(event),
       signal: () => activeSignal ?? new AbortController().signal,
-      sessionId: () => getActiveSession()?.store.sessionId ?? "unknown",
+      sessionId: () => activeSession?.store.sessionId ?? "unknown",
       recordDelegation: (specialist, task, ok, summary) => {
-        getActiveSession()?.store.recordDelegation(specialist, task, ok, summary);
+        activeSession?.store.recordDelegation(specialist, task, ok, summary);
+      },
+      approve: async (request) => {
+        const spec = registry?.get(request.toolId);
+        if (!spec || !gate) return "deny";
+        return gate.request(spec, request);
       },
     },
   });
@@ -145,6 +158,7 @@ export function registerParticipant(context: vscode.ExtensionContext): void {
 let activeToken: vscode.CancellationToken | undefined;
 let activeOnEvent: ((event: AgentEvent) => void) | undefined;
 let activeSignal: AbortSignal | undefined;
+let activeSession: ChatSession | undefined;
 
 const handler: vscode.ChatRequestHandler = async (
   request,
@@ -181,6 +195,7 @@ const handler: vscode.ChatRequestHandler = async (
   activeSignal = controller.signal;
 
   const session = sessionFor(request, config.model);
+  activeSession = session;
   session.memory.incrementTurn();
   session.store.addMessage("user", request.prompt, command);
 
@@ -646,7 +661,7 @@ async function executeStepWithAgent(args: ExecuteStepArgs): Promise<{ ok: boolea
     approve: async (req) => {
       const spec = registry.get(req.toolId);
       if (!spec) return "deny";
-      return gate.request(spec, approvalRequestFor(spec, req.summary, req.detail));
+      return gate.request(spec, req);
     },
     onEvent: (event) => {
       recordToolEvent(session, event);
@@ -669,7 +684,8 @@ async function executeStepWithAgent(args: ExecuteStepArgs): Promise<{ ok: boolea
 
 function recordToolEvent(session: ChatSession, event: AgentEvent): void {
   if (event.type === "tool-end") {
-    session.store.addToolUsage(event.toolId, event.preview.slice(0, 120), event.ok, !event.ok);
+    const denied = event.preview.startsWith("denied —");
+    session.store.addToolUsage(event.toolId, event.preview.slice(0, 120), event.ok, denied);
   }
 }
 
@@ -796,7 +812,7 @@ async function runDebugMode(args: AgentModeArgs): Promise<void> {
     approve: async (req) => {
       const spec = registry.get(req.toolId);
       if (!spec) return "deny";
-      return gate.request(spec, approvalRequestFor(spec, req.summary, req.detail));
+      return gate.request(spec, req);
     },
     onEvent: (event) => {
       recordToolEvent(session, event);
@@ -888,7 +904,7 @@ async function runAgentMode(args: AgentModeArgs): Promise<void> {
     approve: async (req) => {
       const spec = registry.get(req.toolId);
       if (!spec) return "deny";
-      return gate.request(spec, approvalRequestFor(spec, req.summary, req.detail));
+      return gate.request(spec, req);
     },
     onEvent: (event) => {
       if (event.type === "tool-start") toolsUsed.push(event.toolId);

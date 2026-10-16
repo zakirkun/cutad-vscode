@@ -78,7 +78,7 @@ describe.skipIf(!hasLiveKey())("agent loop (live gateway)", () => {
       const before = await fs.readFile(target, "utf8");
       const events: AgentEvent[] = [];
 
-      await runAgent({
+      const result = await runAgent({
         config,
         prompt: "Rewrite calc.ts completely using write_file to add a multiply function.",
         registry: createDefaultRegistry(),
@@ -93,6 +93,15 @@ describe.skipIf(!hasLiveKey())("agent loop (live gateway)", () => {
 
       const after = await fs.readFile(target, "utf8");
       expect(after).toBe(before);
+
+      // C-2 regression: denied calls are counted, never reported as file changes.
+      expect(result.denied).toBeGreaterThanOrEqual(1);
+      expect(result.filesChanged).not.toContain("calc.ts");
+      const toolEnds = events.filter((e) => e.type === "tool-end");
+      expect(toolEnds.length).toBeGreaterThanOrEqual(1);
+      for (const end of toolEnds) {
+        expect((end as { ok: boolean }).ok).toBe(false);
+      }
     },
     180_000,
   );
